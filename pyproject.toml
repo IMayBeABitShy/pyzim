@@ -1,0 +1,46 @@
+# pyproject.toml for pyzim
+
+
+# build system configuration
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+
+# project metadata
+[project]
+name = "pyzim"
+version = "0.1.0"
+description = "Library for working with ZIM files"
+authors = [
+  { name = "IMayBeABitShy", email = "imaybeabitshy@gmail.com" },
+]
+license = { file = "LICENSE" }
+readme = "README.md"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: File Formats",
+]
+requires-python = ">=3.7"
+dependencies = [
+]
+
+# optional dependencies
+[project.optional-dependencies]
+testing = [
+    "tox",
+]
+compression = [
+    "pyzstd",
+]
+all = [
+    "tox",
+    "pyzstd",
+]
+
+# project urls
+[project.urls]
+"Homepage" = "https://github.com/imaybeabitshy/pyzim"
+"Bug Tracker" = "https://github.com/imaybeabitshy/pyzim/issues"

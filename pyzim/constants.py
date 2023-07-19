@@ -1,0 +1,45 @@
+"""
+This module contains various constants.
+
+@var ZIM_MAJOR_VERSION: current major version of the ZIM standard implemented
+@type ZIM_MAJOR_VERSION: L{int}
+@var COMPATIBLE_ZIM_VERSIONS: a tuple describing the compatible ZIM major versions
+@type COMPATIBLE_ZIM_VERSIONS: L{tuple} of L{int}
+@var ENCODING: (default) encoding to use
+@type ENCODING: L{str}
+@var ENDIAN: a string describing the endian-ness of integers in the ZIM file, see L{struct}
+@type ENDIAN: L{str}
+@var URL_ENTRY_TITLE_INDEX: full URL to the v0 title index of all entries
+@type URL_ENTRY_TITLE_INDEX: L{str}
+@var URL_ARTICLE_TITLE_INDEX: full URL to the v1 title index of all articles
+@type URL_ARTICLE_TITLE_INDEX: L{str}
+@var MIMETYPE_ZIMLISTING: the mimetype used by zim listings (e.g. the title indexes)
+@type MIMETYPE_ZIMLISTING: L{str}
+@var MIMETYPE_REDIRECT: symbolic mimetype used by internal redirects
+@type MIMETYPE_REDIRECT: L{str}
+@var CHECKSUM_LENGTH: the length of the checksum in a ZIM file, in bytes
+@type CHECKSUM_LENGTH: L{int}
+"""
+
+# major version of the ZIM standard implemented
+ZIM_MAJOR_VERSION = 6
+# list of compatible ZIM versions
+COMPATIBLE_ZIM_VERSIONS = (ZIM_MAJOR_VERSION, )
+
+# encoding used
+ENCODING = "utf-8"
+
+# integer endian-ness, in struct format
+ENDIAN = "<"
+
+# special URLs
+URL_ENTRY_TITLE_INDEX = "Xlisting/title/v0"
+URL_ARTICLE_TITLE_INDEX = "Xlisting/titleOrdered/v1"
+
+# mimetypes
+MIMETYPE_ZIMLISTING = "application/octet-stream+zimlisting"
+# special symbolic mimetype for redirects
+MIMETYPE_REDIRECT = "<redirect>"
+
+# length of checksum
+CHECKSUM_LENGTH = 16
