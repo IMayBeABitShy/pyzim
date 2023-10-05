@@ -69,9 +69,15 @@ class BindableTests(unittest.TestCase, TestBase):
             self.assertTrue(bindable.bound)
             self.assertIsNotNone(bindable.zim)
             self.assertIs(bindable.zim, zim)
-            # try to bind again
-            with self.assertRaises(AlreadyBound):
-                bindable.bind(zim)
+            # try to bind again to the same zim
+            bindable.bind(zim)
+            self.assertTrue(bindable.bound)
+            self.assertIsNotNone(bindable.zim)
+            self.assertIs(bindable.zim, zim)
+            # try to bind again to a different zim
+            with self.open_zts_small() as zim_2:
+                with self.assertRaises(AlreadyBound):
+                    bindable.bind(zim_2)
             self.assertTrue(bindable.bound)
             self.assertIsNotNone(bindable.zim)
             self.assertIs(bindable.zim, zim)

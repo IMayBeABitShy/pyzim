@@ -395,6 +395,8 @@ class BaseCacheTests(unittest.TestCase, TestBase):
         with self.assertRaises(NotImplementedError):
             cache.push(1, "a")
         with self.assertRaises(NotImplementedError):
+            cache.remove(1)
+        with self.assertRaises(NotImplementedError):
             cache.clear()
 
 
@@ -415,6 +417,8 @@ class NoOpCacheTests(unittest.TestCase, TestBase):
         with self.assertRaises(KeyError):
             cache.get(1)
         cache.clear()
+        self.assertFalse(cache.has(1))
+        cache.remove(1)
         self.assertFalse(cache.has(1))
 
 
@@ -438,10 +442,12 @@ class LastAccessCacheTests(unittest.TestCase, TestBase):
         ]
         keys_ordered = [e[0] for e in keys_and_values]
         size = 4
+        removed_elements = []  # list of elements removed from cache
 
         # setup cache
-        cache = LastAccessCache(max_size=size)
+        cache = LastAccessCache(on_leave=lambda k, v: removed_elements.append((k, v)), max_size=size)
         self.assertEqual(cache.max_size, size)
+        self.assertEqual(len(removed_elements), 0)
 
         # ensure cache is empty
         for v in keys_ordered:
@@ -455,6 +461,7 @@ class LastAccessCacheTests(unittest.TestCase, TestBase):
         self.assertTrue(did_cache)
         self.assertTrue(cache.has(1))
         self.assertFalse(cache.has(2))
+        self.assertEqual(len(removed_elements), 0)
         # ensure element was cached
         self.assertEqual(cache.get(1), "a")
         with self.assertRaises(KeyError):
@@ -463,6 +470,8 @@ class LastAccessCacheTests(unittest.TestCase, TestBase):
         cache.clear()
         self.assertFalse(cache.has(1))
         self.assertFalse(cache.has(2))
+        self.assertEqual(len(removed_elements), 1)
+        removed_elements.clear()
         with self.assertRaises(KeyError):
             cache.get(1)
         # push all values
@@ -475,13 +484,17 @@ class LastAccessCacheTests(unittest.TestCase, TestBase):
             self.assertEqual(cache.get(k), v)
         for k, v in keys_and_values[:-size]:
             self.assertFalse(cache.has(k))
+        self.assertEqual(len(removed_elements), len(keys_and_values) - size)
+        removed_elements.clear()
         # clear and push again, so we have an easier time keeping
         # track of which elements should be in the cache
-        cache.clear()
+        # also use this opportunity to test .clear(call_on_leave=False)
+        cache.clear(call_on_leave=False)
         self.assertFalse(cache.has(1))
         self.assertFalse(cache.has(2))
         with self.assertRaises(KeyError):
             cache.get(1)
+        self.assertEqual(len(removed_elements), 0)
         # push all values
         for k, v in keys_and_values:
             did_cache = cache.push(k, v)
@@ -489,6 +502,8 @@ class LastAccessCacheTests(unittest.TestCase, TestBase):
         # the last 'size' elements should now be cached
         for k, v in keys_and_values[-size:]:
             self.assertTrue(cache.has(k))
+        self.assertEqual(len(removed_elements), len(keys_and_values) - size)
+        removed_elements.clear()
         # pull earliest added element forward
         # forward pulling should happen when an element is accessed
         earliest_cached_kv = keys_and_values[-size]
@@ -504,12 +519,90 @@ class LastAccessCacheTests(unittest.TestCase, TestBase):
         self.assertTrue(cache.has(earliest_cached_kv[0]))
         self.assertFalse(cache.has(second_earliest_cached_kv[0]))
         self.assertEqual(cache.get(earliest_cached_kv[0]), earliest_cached_kv[1])
+        self.assertNotIn(earliest_cached_kv, removed_elements)
+        self.assertIn(second_earliest_cached_kv, removed_elements)
 
         # clear again
         cache.clear()
         # ensure True when cache gets pushed with the same element twice
         self.assertTrue(cache.push(1, "a"))
         self.assertTrue(cache.push(1, "b"))
+
+    def test_cache_update(self):
+        """
+        Test updating a cache element.
+        """
+        cache = LastAccessCache(max_size=3)
+        cache.push(1, "a")
+        cache.push(2, "b")
+        cache.push(3, "c")
+        self.assertTrue(cache.has(1))
+        self.assertTrue(cache.has(2))
+        self.assertTrue(cache.has(3))
+        self.assertEqual(cache.get(1), "a")
+        self.assertEqual(cache.get(2), "b")
+        self.assertEqual(cache.get(3), "c")
+
+        # update element
+        cache.push(2, "B")
+        self.assertTrue(cache.has(1))
+        self.assertTrue(cache.has(2))
+        self.assertTrue(cache.has(3))
+        self.assertEqual(cache.get(1), "a")
+        self.assertEqual(cache.get(2), "B")
+        self.assertEqual(cache.get(3), "c")
+
+        # update another element
+        cache.push(1, "A")
+        self.assertTrue(cache.has(1))
+        self.assertTrue(cache.has(2))
+        self.assertTrue(cache.has(3))
+        self.assertEqual(cache.get(1), "A")
+        self.assertEqual(cache.get(2), "B")
+        self.assertEqual(cache.get(3), "c")
+
+    def test_remove(self):
+        """
+        Test L{pyzim.cache.LastAccessCache.remove}.
+        """
+        removed_elements = []  # list of elements removed from cache
+        # setup cache
+        size = 3
+        cache = LastAccessCache(on_leave=lambda k, v: removed_elements.append((k, v)), max_size=size)
+
+        cache.push(1, "a")
+        cache.push(2, "b")
+        cache.push(3, "c")
+        self.assertTrue(cache.has(1))
+        self.assertTrue(cache.has(2))
+        self.assertTrue(cache.has(3))
+        self.assertFalse(cache.has(4))
+        # remove non-cached element
+        cache.remove(4)
+        self.assertTrue(cache.has(1))
+        self.assertTrue(cache.has(2))
+        self.assertTrue(cache.has(3))
+        self.assertFalse(cache.has(4))
+        # remove cached element
+        cache.remove(2)
+        self.assertTrue(cache.has(1))
+        self.assertFalse(cache.has(2))
+        self.assertTrue(cache.has(3))
+        self.assertFalse(cache.has(4))
+        self.assertIn((2, "b"), removed_elements)
+        self.assertEqual(len(removed_elements), 1)
+        # push an element again, to ensure this still works
+        cache.push(2, "b")
+        self.assertTrue(cache.has(2))
+        self.assertEqual(cache.get(2), "b")
+        # remove another element with call_on_leave = False
+        cache.remove(1, call_on_leave=False)
+        self.assertFalse(cache.has(1))
+        self.assertTrue(cache.has(2))
+        self.assertTrue(cache.has(3))
+        self.assertFalse(cache.has(4))
+        self.assertIn((2, "b"), removed_elements)
+        self.assertEqual(len(removed_elements), 1)
 
 
 class TopAccessCacheTests(unittest.TestCase, TestBase):
@@ -522,20 +615,25 @@ class TopAccessCacheTests(unittest.TestCase, TestBase):
         """
         # setup cache
         size = 3
-        cache = TopAccessCache(max_size=size)
+        removed_elements = []
+        cache = TopAccessCache(on_leave=lambda k, v: removed_elements.append((k, v)), max_size=size)
         # ensure cache is empty
         for i in range(1, 10):
             self.assertFalse(cache.has(i))
         # ensure error when getting non-cached key
         with self.assertRaises(KeyError):
             cache.get(1)
+        self.assertEqual(len(removed_elements), 0)
         # push a single element
         self.assertTrue(cache.push(1, "a"))
         self.assertTrue(cache.has(1))
         self.assertEqual(cache.get(1), "a")
+        self.assertEqual(len(removed_elements), 0)
         # clear the cache
         cache.clear()
         self.assertFalse(cache.has(1))
+        self.assertEqual(len(removed_elements), 1)
+        removed_elements.clear()
         # push an element
         self.assertTrue(query_cache_n_times(cache, 1, "a", 10))
         self.assertTrue(cache.has(1))
@@ -549,6 +647,7 @@ class TopAccessCacheTests(unittest.TestCase, TestBase):
         self.assertEqual(cache.get(2), "b")
         self.assertTrue(cache.has(3))
         self.assertEqual(cache.get(3), "c")
+        self.assertEqual(len(removed_elements), 0)
         # push another element more often than a, pushing it out
         self.assertTrue(query_cache_n_times(cache, 4, "d", 50))
         self.assertTrue(cache.has(4))
@@ -558,9 +657,12 @@ class TopAccessCacheTests(unittest.TestCase, TestBase):
         self.assertEqual(cache.get(2), "b")
         self.assertTrue(cache.has(3))
         self.assertEqual(cache.get(3), "c")
+        self.assertEqual(len(removed_elements), 1)
+        self.assertIn((1, "a"), removed_elements)
         # push another element once, it should not be added to the cache
         self.assertFalse(cache.push(5, "e"))
         self.assertFalse(cache.has(5))
+        self.assertIn((1, "a"), removed_elements)
         # push another element more often then d, pushing out b
         self.assertTrue(query_cache_n_times(cache, 6, "f", 70))
         self.assertTrue(cache.has(6))
@@ -571,6 +673,8 @@ class TopAccessCacheTests(unittest.TestCase, TestBase):
         self.assertEqual(cache.get(3), "c")
         self.assertTrue(cache.has(4))
         self.assertEqual(cache.get(4), "d")
+        self.assertEqual(len(removed_elements), 2)
+        self.assertIn((2, "b"), removed_elements)
         # push a again 25 times, which should add it again, pushing out c
         self.assertTrue(query_cache_n_times(cache, 1, "a", 25))
         self.assertTrue(cache.has(1))
@@ -580,6 +684,8 @@ class TopAccessCacheTests(unittest.TestCase, TestBase):
         self.assertFalse(cache.has(2))
         self.assertTrue(cache.has(4))
         self.assertEqual(cache.get(4), "d")
+        self.assertEqual(len(removed_elements), 3)
+        self.assertIn((3, "c"), removed_elements)
         # push another element less times than the remaing elements
         self.assertFalse(query_cache_n_times(cache, 7, "g", 30))
         self.assertTrue(cache.has(1))
@@ -590,14 +696,97 @@ class TopAccessCacheTests(unittest.TestCase, TestBase):
         self.assertTrue(cache.has(4))
         self.assertEqual(cache.get(4), "d")
         self.assertFalse(cache.has(7))
+        self.assertEqual(len(removed_elements), 3)
 
         # clear again
-        cache.clear()
+        # also use this opportunity to test call_on_leave=False
+        removed_elements.clear()
+        cache.clear(call_on_leave=False)
+        self.assertEqual(len(removed_elements), 0)
         # ensure true on double push
         self.assertTrue(cache.push(8, "h"))
         self.assertTrue(cache.has(8))
         self.assertTrue(cache.push(8, "i"))
         self.assertTrue(cache.has(8))
+
+    def test_cache_update(self):
+        """
+        Test updating a cache element.
+        """
+        cache = TopAccessCache(max_size=3)
+        cache.push(1, "a")
+        cache.push(2, "b")
+        cache.push(3, "c")
+        self.assertTrue(cache.has(1))
+        self.assertTrue(cache.has(2))
+        self.assertTrue(cache.has(3))
+        self.assertEqual(cache.get(1), "a")
+        self.assertEqual(cache.get(2), "b")
+        self.assertEqual(cache.get(3), "c")
+
+        # update element
+        cache.push(2, "B")
+        self.assertTrue(cache.has(1))
+        self.assertTrue(cache.has(2))
+        self.assertTrue(cache.has(3))
+        self.assertEqual(cache.get(1), "a")
+        self.assertEqual(cache.get(2), "B")
+        self.assertEqual(cache.get(3), "c")
+
+        # update another element
+        cache.push(1, "A")
+        self.assertTrue(cache.has(1))
+        self.assertTrue(cache.has(2))
+        self.assertTrue(cache.has(3))
+        self.assertEqual(cache.get(1), "A")
+        self.assertEqual(cache.get(2), "B")
+        self.assertEqual(cache.get(3), "c")
+
+    def test_remove(self):
+        """
+        Test L{pyzim.cache.TopAccessCache.remove}.
+        """
+        # I don't think this requires a more specialised test.
+        # for now, this is a copy of the test for LastAccessCache
+
+        removed_elements = []  # list of elements removed from cache
+        # setup cache
+        size = 3
+        cache = TopAccessCache(on_leave=lambda k, v: removed_elements.append((k, v)), max_size=size)
+
+        cache.push(1, "a")
+        cache.push(2, "b")
+        cache.push(3, "c")
+        self.assertTrue(cache.has(1))
+        self.assertTrue(cache.has(2))
+        self.assertTrue(cache.has(3))
+        self.assertFalse(cache.has(4))
+        # remove non-cached element
+        cache.remove(4)
+        self.assertTrue(cache.has(1))
+        self.assertTrue(cache.has(2))
+        self.assertTrue(cache.has(3))
+        self.assertFalse(cache.has(4))
+        # remove cached element
+        cache.remove(2)
+        self.assertTrue(cache.has(1))
+        self.assertFalse(cache.has(2))
+        self.assertTrue(cache.has(3))
+        self.assertFalse(cache.has(4))
+        self.assertIn((2, "b"), removed_elements)
+        self.assertEqual(len(removed_elements), 1)
+        # push an element again, to ensure this still works
+        cache.push(2, "b")
+        self.assertTrue(cache.has(2))
+        self.assertEqual(cache.get(2), "b")
+        # remove another element with call_on_leave = False
+        cache.remove(1, call_on_leave=False)
+        self.assertFalse(cache.has(1))
+        self.assertTrue(cache.has(2))
+        self.assertTrue(cache.has(3))
+        self.assertFalse(cache.has(4))
+        self.assertIn((2, "b"), removed_elements)
+        self.assertEqual(len(removed_elements), 1)
 
 
 class HybridCacheTests(unittest.TestCase, TestBase):
@@ -608,7 +797,71 @@ class HybridCacheTests(unittest.TestCase, TestBase):
         """
         Test caching behavior.
         """
-        cache = HybridCache(last_cache_size=1, top_cache_size=1)
+        removed_elements = []
+        cache = HybridCache(
+            on_leave=lambda k, v: removed_elements.append((k, v)),
+            last_cache_size=1,
+            top_cache_size=1,
+        )
+        # ensure cache is empty
+        for i in range(1, 10):
+            self.assertFalse(cache.has(i))
+        # ensure error when getting non-cached key
+        with self.assertRaises(KeyError):
+            cache.get(1)
+        self.assertEqual(len(removed_elements), 0)
+        # push a single element
+        self.assertTrue(cache.push(1, "a"))
+        self.assertTrue(cache.has(1))
+        self.assertEqual(cache.get(1), "a")
+        # clear the cache
+        cache.clear()
+        self.assertFalse(cache.has(1))
+        self.assertEqual(len(removed_elements), 1)
+        removed_elements.clear()
+        # add an element multiple times, then another element a single time
+        self.assertTrue(query_cache_n_times(cache, 1, "a", 10))
+        cache.push(2, "b")
+        # both elements should be present
+        self.assertTrue(cache.has(1))
+        self.assertEqual(cache.get(1), "a")
+        self.assertTrue(cache.has(2))
+        self.assertEqual(cache.get(2), "b")
+        # push a third element a single time, keeping a, but pushing out b
+        self.assertTrue(cache.push(3, "c"))
+        self.assertTrue(cache.has(1))
+        self.assertEqual(cache.get(1), "a")
+        self.assertFalse(cache.has(2))
+        self.assertTrue(cache.has(3))
+        self.assertEqual(cache.get(3), "c")
+        self.assertIn((2, "b"), removed_elements)
+        # querying c a couple of times, then b, should push a out
+        # self.assertTrue(query_cache_n_times(cache, 3, "c", 20))
+        did_push = False
+        for i in range(20):
+            did_push = cache.push(3, "c") or did_push
+        self.assertTrue(did_push)
+        self.assertTrue(cache.push(2, "b"))
+        self.assertFalse(cache.has("a"))
+        self.assertTrue(cache.has(2))
+        self.assertEqual(cache.get(2), "b")
+        self.assertTrue(cache.has(3))
+        self.assertEqual(cache.get(3), "c")
+
+        # clear again
+        cache.clear()
+        # ensure True on double push
+        self.assertTrue(cache.push(1, "a"))
+        self.assertTrue(cache.push(1, "b"))
+
+    def test_cache_no_on_leave(self):
+        """
+        Like L{HybridCacheTests.test_cache}, but without on_leave function.
+        """
+        cache = HybridCache(
+            last_cache_size=1,
+            top_cache_size=1,
+        )
         # ensure cache is empty
         for i in range(1, 10):
             self.assertFalse(cache.has(i))
@@ -655,3 +908,79 @@ class HybridCacheTests(unittest.TestCase, TestBase):
         # ensure True on double push
         self.assertTrue(cache.push(1, "a"))
         self.assertTrue(cache.push(1, "b"))
+
+    def test_cache_update(self):
+        """
+        Test updating a cache element.
+        """
+        cache = HybridCache(last_cache_size=3, top_cache_size=3)
+        cache.push(1, "a")
+        cache.push(2, "b")
+        cache.push(3, "c")
+        self.assertTrue(cache.has(1))
+        self.assertTrue(cache.has(2))
+        self.assertTrue(cache.has(3))
+        self.assertEqual(cache.get(1), "a")
+        self.assertEqual(cache.get(2), "b")
+        self.assertEqual(cache.get(3), "c")
+
+        # update element
+        cache.push(2, "B")
+        self.assertTrue(cache.has(1))
+        self.assertTrue(cache.has(2))
+        self.assertTrue(cache.has(3))
+        self.assertEqual(cache.get(1), "a")
+        self.assertEqual(cache.get(2), "B")
+        self.assertEqual(cache.get(3), "c")
+
+        # update another element
+        cache.push(1, "A")
+        self.assertTrue(cache.has(1))
+        self.assertTrue(cache.has(2))
+        self.assertTrue(cache.has(3))
+        self.assertEqual(cache.get(1), "A")
+        self.assertEqual(cache.get(2), "B")
+        self.assertEqual(cache.get(3), "c")
+
+    def test_remove(self):
+        """
+        Test L{pyzim.cache.HybridCache.remove}.
+        """
+        removed_elements = []  # list of elements removed from cache
+        # setup cache
+        size = 3
+        cache = HybridCache(on_leave=lambda k, v: removed_elements.append((k, v)), last_cache_size=size, top_cache_size=size)
+
+        cache.push(1, "a")
+        cache.push(2, "b")
+        cache.push(3, "c")
+        self.assertTrue(cache.has(1))
+        self.assertTrue(cache.has(2))
+        self.assertTrue(cache.has(3))
+        self.assertFalse(cache.has(4))
+        # remove non-cached element
+        cache.remove(4)
+        self.assertTrue(cache.has(1))
+        self.assertTrue(cache.has(2))
+        self.assertTrue(cache.has(3))
+        self.assertFalse(cache.has(4))
+        # remove cached element
+        cache.remove(2)
+        self.assertTrue(cache.has(1))
+        self.assertFalse(cache.has(2))
+        self.assertTrue(cache.has(3))
+        self.assertFalse(cache.has(4))
+        self.assertIn((2, "b"), removed_elements)
+        self.assertEqual(len(removed_elements), 1)
+        # push an element again, to ensure this still works
+        cache.push(2, "b")
+        self.assertTrue(cache.has(2))
+        self.assertEqual(cache.get(2), "b")
+        # remove another element with call_on_leave = False
+        cache.remove(1, call_on_leave=False)
+        self.assertFalse(cache.has(1))
+        self.assertTrue(cache.has(2))
+        self.assertTrue(cache.has(3))
+        self.assertFalse(cache.has(4))
+        self.assertIn((2, "b"), removed_elements)
+        self.assertEqual(len(removed_elements), 1)

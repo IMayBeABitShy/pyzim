@@ -139,6 +139,8 @@ class CompressionTests(unittest.TestCase, TestBase):
         compressor = compression_interface.get_compressor()
         compressed = compressor.compress(raw_data)
         compressed += compressor.flush()
+        org_compressed_length = len(compressed)
+        compressed += b"extradata"
         compressed_f = io.BytesIO(compressed)
         decompressor = compression_interface.get_decompressor()
         reader = DecompressingReader(compressed_f, decompressor)
@@ -151,6 +153,7 @@ class CompressionTests(unittest.TestCase, TestBase):
                 break
             data += read
         self.assertEqual(data, raw_data)
+        self.assertEqual(reader.total_compressed_size, org_compressed_length)
 
     def test_decompressing_reader_skip(self):
         """

@@ -3,6 +3,8 @@ This module contains various constants.
 
 @var ZIM_MAJOR_VERSION: current major version of the ZIM standard implemented
 @type ZIM_MAJOR_VERSION: L{int}
+@var ZIM_MINOR_VERSION: current minor version of the ZIM standard implemented
+@type ZIM_MINOR_VERSION: L{int}
 @var COMPATIBLE_ZIM_VERSIONS: a tuple describing the compatible ZIM major versions
 @type COMPATIBLE_ZIM_VERSIONS: L{tuple} of L{int}
 @var ENCODING: (default) encoding to use
@@ -19,10 +21,23 @@ This module contains various constants.
 @type MIMETYPE_REDIRECT: L{str}
 @var CHECKSUM_LENGTH: the length of the checksum in a ZIM file, in bytes
 @type CHECKSUM_LENGTH: L{int}
+@var DEFAULT_COMPRESSION: default compression type to use
+@type DEFAULT_COMPRESSION: L{pyzim.compression.CompressionType}
+@var LOG_LEVEL_ALLOCATION: log level used for allocation logging
+@type LOG_LEVEL_ALLOCATION: L{int}
+@var LOG_LEVEL_WRITE: log level for individual write operations
+@type LOG_LEVEL_WRITE: L{int}
+@var LOG_LEVEL_READ: log level for individual read operations
+@type LOG_LEVEL_READ: L{int}
 """
+from .compression import CompressionType
+
 
 # major version of the ZIM standard implemented
 ZIM_MAJOR_VERSION = 6
+# minor version of the ZIM standard implemented
+# TODO: we probably need multiple values here later
+ZIM_MINOR_VERSION = 1
 # list of compatible ZIM versions
 COMPATIBLE_ZIM_VERSIONS = (ZIM_MAJOR_VERSION, )
 
@@ -33,8 +48,9 @@ ENCODING = "utf-8"
 ENDIAN = "<"
 
 # special URLs
-URL_ENTRY_TITLE_INDEX = "Xlisting/title/v0"
+URL_ENTRY_TITLE_INDEX = "Xlisting/titleOrdered/v0"
 URL_ARTICLE_TITLE_INDEX = "Xlisting/titleOrdered/v1"
+URL_MAINPAGE_REDIRECT = "WmainPage"
 
 # mimetypes
 MIMETYPE_ZIMLISTING = "application/octet-stream+zimlisting"
@@ -43,3 +59,12 @@ MIMETYPE_REDIRECT = "<redirect>"
 
 # length of checksum
 CHECKSUM_LENGTH = 16
+
+# compression constants
+DEFAULT_COMPRESSION = CompressionType.ZSTD
+
+# special log levels
+LOG_LEVEL_ALLOCATION = 5
+LOG_LEVEL_WRITE = 6
+LOG_LEVEL_READ = 4
+LOG_LEVEL_COMPRESSION_STRATEGY = 7

@@ -250,6 +250,20 @@ class DecompressingReader(object):
         self.read_decompressed = 0
         self.read_compressed = 0
 
+    @property
+    def total_compressed_size(self):
+        """
+        Return the total size of the compressed data stream so far.
+
+        This only works if the compressor has read until the end.
+
+        @return: the total number of compressed bytes read minus the read bytes that were not part of the compressed stream.
+        @rtype: L{int}
+        """
+        if not self._decompressor.eof:
+            raise RuntimeError("DecompressingReader.total_compressed_size() can only be called after the full compressed stream has been read!")
+        return self.read_compressed - len(self._decompressor.unused_data)
+
     def read(self, n, extra_decompress=0):
         """
         Read up to n bytes.
@@ -292,6 +306,9 @@ class DecompressingReader(object):
                 # call to decompress further data
                 if self._decompressor.needs_input:
                     further_data = self._f.read(n)
+                    if not further_data:
+                        # EOF
+                        raise IOError("EOF during decompression")
                     self.read_compressed += len(further_data)
                 else:
                     further_data = b""

@@ -4,10 +4,11 @@ Implementation of the MIME type list.
 import threading
 
 from . import constants
+from .modifiable import ModifiableMixIn
 from .ioutil import read_until_zero
 
 
-class MimeTypeList(object):
+class MimeTypeList(ModifiableMixIn):
     """
     This class represents a MIME type list.
 
@@ -15,6 +16,11 @@ class MimeTypeList(object):
     mimetype used by entries is contained in the MIME type list. The
     entries themselves only contain the index of the MIME type in this
     list.
+
+    @ivar _mimetypes: (ordered) list of mimetypes in this object
+    @type _mimetypes: L{list} of L{bytes}
+    @ivar _lock: thread safety lock
+    @type _lock: L{threading.Lock}
     """
     def __init__(self, mimetypes):
         """
@@ -24,8 +30,12 @@ class MimeTypeList(object):
         @type mimetypes: L{list} of L{bytes}
         """
         assert isinstance(mimetypes, list)
+        ModifiableMixIn.__init__(self)
         self._mimetypes = mimetypes
         self._lock = threading.Lock()
+
+        # ensure we know the current object size before modifications later
+        self.after_flush_or_read()
 
     def __len__(self):
         """
@@ -125,7 +135,7 @@ class MimeTypeList(object):
         @type mimetype: L{str} or L{bytes}
         @param register: if nonzero and the mimetype was not found, register it
         @type register: L{bool}
-        @return: the index of the mimetype, None if not found and mimetype is false
+        @return: the index of the mimetype, None if not found and register is false
         @rtype: L{int} or L{None} if not found and register is not true
         """
         assert isinstance(mimetype, (bytes, str))
@@ -150,8 +160,10 @@ class MimeTypeList(object):
 
         @param mimetype: mimetype to register
         @type mimetype: L{str} or L{bytes}
+        @raises pyzim.exceptions.NonMutable: if mimetype list is not mutable
         """
         assert isinstance(mimetype, (bytes, str))
+        self.ensure_mutable()
         if isinstance(mimetype, str):
             mimetype = mimetype.encode(constants.ENCODING)
         with self._lock:
@@ -163,6 +175,7 @@ class MimeTypeList(object):
                 return
 
             self._mimetypes.append(mimetype)
+            self.mark_dirty()
 
     def iter_mimetypes(self, as_unicode=False):
         """
@@ -177,6 +190,12 @@ class MimeTypeList(object):
             if as_unicode:
                 mimetype = mimetype.decode(constants.ENCODING)
             yield mimetype
+
+    def get_disk_size(self):
+        size = 1  # for end byte
+        for mt in self._mimetypes:
+            size += (len(mt) + 1)
+        return size
 
 
 if __name__ == "__main__":  # pragma: no cover

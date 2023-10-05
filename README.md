@@ -8,17 +8,19 @@
 
 ## Features
 
-`pyzim` is not yet fully implemented. While the core reader functionality is implemented and you *should* be able to read all modern ZIM files, some features (like search) are still missing.
+`pyzim` is nearly fully implemented. It supports nearly all reader featurs and you *should* be able to read all modern ZIM files, but some features (like search) are still missing. A writer also exists and is even capable of editing existing ZIM files.
 
 **Basic features:**
 
-Most read operations on ZIM files are implemented.
+Most read and write operations on ZIM files are implemented.
 
-- Read ZIM files
+- Read and write ZIM files
 - all compression types are supported (at least at the time this document is being written)
 - Access header informations and metadata
 - access clusters and entries directly
 - iterate over entries and clusters
+- edit existig ZIM files (add new entries, remove entries, edit them and clusters)
+- a space allocation algorithm tries to recycle unused space in a ZIM file when it is being edited.
 - work with ZIM files at a specified offset (untested)
 
 **Missing features:**
@@ -26,8 +28,6 @@ Most read operations on ZIM files are implemented.
 The following features are still missing, but planned:
 
 - search functions
-- writing ZIM files
-- modifying ZIM files
 - simple illustration methods (you can already read metadata illustrations, but you will have to convert them to PIL images manually)
 - various additional CLI tools
 - support for ZIM files without namespaces
@@ -39,11 +39,12 @@ In addition to regular ZIM functionality, the following features are also implem
 - configurable caching of entries and clusters for better performance
 - various alternative implementations of clusters for better performance at the cost of RAM
 - a policy system to manage resource allocation behavior (e.g. use a policy to reduce RAM usage as much as possible at the cost of access speed)
+- ZIM editing.
 
 **General project features:**
 
 - extensive API documentation (but not yet hosted online)
-- extensive software tests (branch-coverage of 97% at the time of writing)
+- extensive software tests (branch-coverage of 98% at the time of writing)
 - examples are provided
 
 ## Installation
@@ -98,6 +99,8 @@ If you are a contributor looking to write you own documentation, you can find a 
 ## Testing
 
 At the time of writing this document, `pyzim` achieves a (statement-based) test coverage of 98%. You can run the tests locally by executing `tox` in the project directory. Specify the `testing` extra during installation of `pyzim` to automatically install all test dependencies.
+
+`pyzim` logs a lot of low-level operations at numeric values below the `DEBUG` level. For example, each entry being read is logged, but normally aren't shown. See the documentation of `pyzim.constants` for these log levels. Editing `tox.ini` and changing the log level may be helpful when debugging.
 
 ## FAQ
 

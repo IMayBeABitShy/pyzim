@@ -25,10 +25,12 @@ class SimplePointerListTests(unittest.TestCase, TestBase):
         """
         pointerlist = SimplePointerList.from_bytes(self.rawlist)
         self.assertEqual(len(pointerlist), 6)
+        self.assertFalse(pointerlist.dirty)
         for i in range(len(pointerlist)):
             self.assertEqual(pointerlist.get_by_index(i), i + 10)
         with self.assertRaises(IndexError):
             pointerlist.get_by_index(len(pointerlist))  # out of range
+        self.assertFalse(pointerlist.dirty)
 
     def test_modify(self):
         """
@@ -36,12 +38,48 @@ class SimplePointerListTests(unittest.TestCase, TestBase):
         """
         pointerlist = SimplePointerList.from_bytes(self.rawlist)
         self.assertEqual(len(pointerlist), 6)
+        self.assertFalse(pointerlist.dirty)
         for i in range(len(pointerlist)):
             self.assertEqual(pointerlist.get_by_index(i), i + 10)
         pointerlist.set(1, 1000)
         self.assertEqual(pointerlist.get_by_index(1), 1000)
+        self.assertTrue(pointerlist.dirty)
+        pointerlist.dirty = False
         pointerlist.append(2000)
         self.assertEqual(pointerlist.get_by_index(len(pointerlist) - 1), 2000)
+        self.assertTrue(pointerlist.dirty)
+        # test set() with index >= len(pointerlist)
+        pointerlist.dirty = False
+        # i == len(pointerlist) should append value
+        pointerlist.set(len(pointerlist), 10000)
+        self.assertEqual(len(pointerlist), 8)
+        self.assertEqual(pointerlist.get_by_index(7), 10000)
+        self.assertTrue(pointerlist.dirty)
+        # i > len with add_placeholders=False should raise an exception
+        pointerlist.dirty = False
+        with self.assertRaises(IndexError):
+            pointerlist.set(12, 11000, add_placeholders=False)
+        self.assertEqual(len(pointerlist), 8)
+        self.assertEqual(pointerlist.get_by_index(7), 10000)
+        self.assertFalse(pointerlist.dirty)
+        # i > len with add_placeholders=True should add placeholders
+        pointerlist.dirty = False
+        pointerlist.set(12, 11000, add_placeholders=True)
+        self.assertEqual(len(pointerlist), 13)
+        self.assertEqual(pointerlist.get_by_index(10), 11000)
+        self.assertEqual(pointerlist.get_by_index(12), 11000)
+        self.assertTrue(pointerlist.dirty)
+        # ensure an error will be raised if not mutable
+        pointerlist.mutable = False
+        pointerlist.dirty = False
+        with self.assertRaises(exceptions.NonMutable):
+            pointerlist.append(3000)
+        self.assertFalse(pointerlist.dirty)
+        self.assertEqual(len(pointerlist), 13)
+        with self.assertRaises(exceptions.NonMutable):
+            pointerlist.set(1, 500)
+        self.assertFalse(pointerlist.dirty)
+        self.assertEqual(pointerlist.get_by_index(1), 1000)
 
     def test_from_file(self):
         """
@@ -59,6 +97,7 @@ class SimplePointerListTests(unittest.TestCase, TestBase):
         """
         pointerlist = SimplePointerList.from_bytes(self.rawlist)
         dumped = pointerlist.to_bytes()
+        self.assertEqual(len(dumped), pointerlist.get_disk_size())
         parsed = SimplePointerList.from_bytes(dumped)
         self.assertListEqual(pointerlist._pointers, parsed._pointers)
 
@@ -95,6 +134,101 @@ class SimplePointerListTests(unittest.TestCase, TestBase):
             self.assertEqual(len(pointers), rl_end - rl_start)
             for p_a, p_b in zip(pointers, self.data[rl_start:rl_end]):
                 self.assertEqual(p_a, p_b)
+
+    def test_get_by_pointer(self):
+        """
+        Test L{pyzim.pointerlist.SimplePointerList.get_by_pointer}.
+        """
+        pointers = [10, 20, 30, 40, 50]
+        pointerlist = SimplePointerList(pointers)
+        self.assertEqual(pointerlist.get_by_pointer(10), 0)
+        self.assertEqual(pointerlist.get_by_pointer(30), 2)
+        self.assertEqual(pointerlist.get_by_pointer(50), 4)
+        with self.assertRaises(KeyError):
+            pointerlist.get_by_pointer(35)
+
+    def test_remove_by_index(self):
+        """
+        Test L{pyzim.pointerlist.SimplePointerList.remove_by_index}.
+        """
+        pointers = [10, 20, 30, 40, 50]
+        pointerlist = SimplePointerList(pointers)
+        pointerlist.remove_by_index(0)
+        self.assertEqual(len(pointerlist), 4)
+        self.assertEqual(pointerlist.get_by_index(0), 20)
+        pointerlist.remove_by_index(1)
+        self.assertEqual(len(pointerlist), 3)
+        self.assertEqual(pointerlist.get_by_index(1), 40)
+        pointerlist.remove_by_index(2)
+        self.assertEqual(len(pointerlist), 2)
+        self.assertEqual(pointerlist.get_by_index(1), 40)
+        # check that this now also changes the last accessible index
+        with self.assertRaises(IndexError):
+            pointerlist.get_by_index(2)
+
+    def test_mass_update(self):
+        """
+        Test L{pyzim.pointerlist.SimplePointerList.mass_update}.
+        """
+        pointers = [10, 20, 30, 40, 50]
+        pointerlist = SimplePointerList(pointers)
+        # update with 0 should not cause any changes
+        pointerlist.mass_update(0)
+        self.assertEqual(list(pointerlist.iter_pointers()), pointers)
+        # increment by 1
+        pointerlist.mass_update(1)
+        self.assertEqual(
+            list(pointerlist.iter_pointers()),
+            [11, 21, 31, 41, 51],
+        )
+        # decrement by 1
+        pointerlist.mass_update(-1)
+        self.assertEqual(list(pointerlist.iter_pointers()), pointers)
+        # ensure pointerlist is marked as dirty due to the modifications
+        self.assertTrue(pointerlist.dirty)
+
+        # check with specified ranges
+        # NOTE: ranges refers to pointer values
+        # end=0 should cause no modifications
+        pointerlist.mass_update(1, end=0)
+        self.assertEqual(list(pointerlist.iter_pointers()), pointers)
+        # same with start=51
+        pointerlist.mass_update(1, start=51)
+        self.assertEqual(list(pointerlist.iter_pointers()), pointers)
+        # change first two values
+        pointerlist.mass_update(1, end=21)
+        self.assertEqual(
+            list(pointerlist.iter_pointers()),
+            [11, 21, 30, 40, 50],
+        )
+        # change last two values
+        pointerlist.mass_update(-2, start=40)
+        self.assertEqual(
+            list(pointerlist.iter_pointers()),
+            [11, 21, 30, 38, 48],
+        )
+        # change middle 3 values
+        pointerlist.mass_update(5, start=21, end=39)
+        self.assertEqual(
+            list(pointerlist.iter_pointers()),
+            [11, 26, 35, 43, 48],
+        )
+
+    def test_get_disk_size(self):
+        """
+        Test L{pyzim.pointerlist.SimplePointerList.get_disk_size}.
+        """
+        testdata = [
+            # ([pointers], expected size),
+            ([], 0),
+            ([1], 8),
+            ([1, 2,], 16),
+            ([1, 2, 3], 24),
+        ]
+        for pointers, expected in testdata:
+            pointerlist = SimplePointerList(pointers)
+            self.assertEqual(pointerlist.get_disk_size(), expected)
+            self.assertEqual(pointerlist.get_disk_size(), len(pointerlist.to_bytes()))
 
 
 class OrderedPointerListTests(unittest.TestCase, TestBase):
@@ -138,6 +272,7 @@ class OrderedPointerListTests(unittest.TestCase, TestBase):
         self.assertEqual(pointerlist.get_by_index(0), 0)
         self.assertEqual(pointerlist.get_by_index(5), 5)
         pointerlist.check_sorted()
+        self.assertFalse(pointerlist.dirty)
 
     def test_from_file(self):
         """
@@ -164,12 +299,15 @@ class OrderedPointerListTests(unittest.TestCase, TestBase):
         self.assertEqual(pointerlist.get("g"), 5)
         self.assertFalse(pointerlist.has("d"))
         pointerlist.check_sorted()
+        self.assertFalse(pointerlist.dirty)
         pointerlist.add(b"d", 3)
         self.data.insert(3, b"d")
         self.assertEqual(len(pointerlist), 7)
         self.assertTrue(pointerlist.has("d"))
         self.assertEqual(pointerlist.get("d"), 3)
         self.assertEqual(pointerlist.get_by_index(3), 3)
+        self.assertTrue(pointerlist.dirty)
+        pointerlist.dirty = False
         pointerlist.check_sorted()
         pointerlist.remove(b"d")
         del self.data[3]
@@ -177,9 +315,24 @@ class OrderedPointerListTests(unittest.TestCase, TestBase):
         self.assertFalse(pointerlist.has("d"))
         self.assertTrue(pointerlist.has("e"))
         self.assertEqual(pointerlist.get_by_index(3), 3)
+        self.assertTrue(pointerlist.dirty)
+        pointerlist.dirty = False
         with self.assertRaises(KeyError):
             pointerlist.remove(b"h")
+        self.assertFalse(pointerlist.dirty)
         pointerlist.check_sorted()
+        # ensure an error is raised when the list is not mutable
+        pointerlist.mutable = False
+        with self.assertRaises(exceptions.NonMutable):
+            pointerlist.add("z", 27)
+        self.assertFalse(pointerlist.dirty)
+        pointerlist.check_sorted()
+        self.assertFalse(pointerlist.has("z"))
+        with self.assertRaises(exceptions.NonMutable):
+            pointerlist.remove("a")
+        self.assertFalse(pointerlist.dirty)
+        pointerlist.check_sorted()
+        self.assertTrue(pointerlist.has("a"))
 
     def test_add_remove_unicode(self):
         """
@@ -251,6 +404,34 @@ class OrderedPointerListTests(unittest.TestCase, TestBase):
         """
         pointerlist = OrderedPointerList.from_bytes(self.rawlist, key_func=self.keyfunc)
         self.assertEqual(pointerlist.find_first_greater_equals("a"), 0)
+        self.assertEqual(pointerlist.find_first_greater_equals(b"a"), 0)
         self.assertEqual(pointerlist.find_first_greater_equals("g"), len(self.data) - 1)
         self.assertEqual(pointerlist.find_first_greater_equals("b"), 1)
         self.assertEqual(self.data[pointerlist.find_first_greater_equals("e"):], [b"e", b"f", b"g"])
+
+    def test_iter_values(self):
+        """
+        Test L{pyzim.pointerlist.OrderedPointerList.iter_values}.
+        """
+        pointerlist = OrderedPointerList.from_bytes(self.rawlist, key_func=self.keyfunc)
+        start_end_values = (
+            (0, len(self.data)),
+            (0, 1),
+            (2, 2),
+            (None, None),
+            (0, None),
+            (None, len(self.data)),
+        )
+        for start, end in start_end_values:
+            # figure out intended values if start and/or end is None
+            rl_start = start
+            rl_end = end
+            if rl_start is None:
+                rl_start = 0
+            if rl_end is None:
+                rl_end = len(self.data)
+
+            values = [v for v in pointerlist.iter_values(start, end)]
+            self.assertEqual(len(values), rl_end - rl_start)
+            for v_a, v_b in zip(values, self.data[rl_start:rl_end]):
+                self.assertEqual(v_a, v_b)

@@ -40,6 +40,13 @@ class EntryNotFound(BaseZimException):
     pass
 
 
+class ParseError(BaseZimException):
+    """
+    Exception raised when a parsing failed!
+    """
+    pass
+
+
 class BindingError(BaseZimException):
     """
     Baseclass for exceptions caused by binding-related functionality.
@@ -71,5 +78,33 @@ class UnsupportedCompressionType(IncompatibleZimFile):
 class UnsortedList(BaseZimException):
     """
     Exception raised when a list is not sorted even though it is supposed to be.
+    """
+    pass
+
+
+class BlobNotFound(BaseZimException):
+    """
+    Exception raised when a blob was not found inside a cluster.
+    """
+    pass
+
+
+class ZimWriteException(BaseZimException):
+    """
+    Baseclass for exception related to ZIM creation/modification.
+    """
+    pass
+
+
+class NonMutable(ZimWriteException):
+    """
+    Exception raised when a non-mutable/non-modifiable object is modified.
+    """
+    pass
+
+
+class UnresolvedRedirect(ZimWriteException):
+    """
+    Exception raised when a redirect can not be resolved during writing.
     """
     pass

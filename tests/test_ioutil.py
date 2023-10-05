@@ -30,15 +30,25 @@ class UtilTests(unittest.TestCase, TestBase):
         self.assertEqual(read_b, substr_b)
         self.assertIsInstance(read_b, bytes)
         # read with 0
-        f.seek(0)
+        # NOTE: for some reason f.seek(0) does not work.
+        # so instead, we need to create a new instance of BytesIO
+        f = io.BytesIO(data)
         read_a = read_until_zero(f, strip_zero=False)
         self.assertEqual(read_a, substr_a + b"\x00")
         self.assertIsInstance(read_a, bytes)
         read_b = read_until_zero(f, strip_zero=False)
         self.assertEqual(read_b, substr_b + b"\x00")
         self.assertIsInstance(read_b, bytes)
+        # read explicitly without 0
+        f = io.BytesIO(data)
+        read_a = read_until_zero(f, strip_zero=True)
+        self.assertEqual(read_a, substr_a)
+        self.assertIsInstance(read_a, bytes)
+        read_b = read_until_zero(f, strip_zero=True)
+        self.assertEqual(read_b, substr_b)
+        self.assertIsInstance(read_b, bytes)
         # read unicode
-        f.seek(0)
+        f = io.BytesIO(data)
         read_a = read_until_zero(f, encoding=constants.ENCODING)
         self.assertEqual(read_a, substr_a.decode(constants.ENCODING))
         self.assertIsInstance(read_a, str)
@@ -46,7 +56,7 @@ class UtilTests(unittest.TestCase, TestBase):
         self.assertEqual(read_b, substr_b.decode(constants.ENCODING))
         self.assertIsInstance(read_b, str)
         # read unicode with 0
-        f.seek(0)
+        f = io.BytesIO(data)
         read_a = read_until_zero(f, strip_zero=False, encoding=constants.ENCODING)
         self.assertEqual(read_a[:-1], substr_a.decode(constants.ENCODING))
         self.assertIsInstance(read_a, str)

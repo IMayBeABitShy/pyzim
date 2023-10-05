@@ -78,12 +78,15 @@ class BindableMixIn(object):
         """
         Bind this object to a ZIM file.
 
+        This can be called multiple times, provided that "zim" is always
+        the same L{pyzim.archive.Zim} object.
+
         @param zim: ZIM archive to bind to
         @type zim: L{pyzim.archive.Zim}
         @raise pyzim.exceptions.AlreadyBound: when already bound to a zim archive
         """
         # assert isinstance(zim, archive.Zim)
-        if self.bound:
+        if self.bound and (zim is not self.zim):
             raise AlreadyBound("Already bound to: {}".format(repr(self._zim)))
         self._zim = zim
 

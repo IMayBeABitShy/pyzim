@@ -6,6 +6,7 @@ is as fast as possible. This module offers mulitple cache implementations
 which are meant to reduce the amount of times data has to actually be
 uncompressed from the cluster.
 """
+import threading
 
 
 class BaseCache(object):
@@ -24,7 +25,19 @@ class BaseCache(object):
 
     This class does not actually implement anything and serves as a
     superclass that describes the methods.
+
+    @ivar on_leave: a callable expecting two arguments (key, value) that will be called when an element leaves the cache
+    @type on_leave: callable or L{None}
     """
+    def __init__(self, on_leave=None):
+        """
+        The default constructor.
+
+        @param on_leave: a callable expecting two arguments (key, value) that will be called when an element leaves the cache
+        @type on_leave: callable or L{None}
+        """
+        self.on_leave = on_leave
+
     def has(self, key):
         """
         Return True if an element is cached for the specific key.
@@ -48,12 +61,13 @@ class BaseCache(object):
         """
         raise NotImplementedError("BaseCache.get() needs to be overwritten in subclasses!")
 
-    def push(self, key, element):
+    def push(self, key, element, allow_replacement=True):
         """
         Push an element for this key into this cache.
 
-        It is up for the cache to decice whether the element will
-        actually be cached or not.
+        It is up for the cache to decide whether the element will
+        actually be cached or not. If C{allow_replacement=False} is set,
+        no other element should be kicked from the cache.
 
         Re-pushing an already cached element will not update the cached
         element.
@@ -62,14 +76,30 @@ class BaseCache(object):
         @type key: hashable
         @param element: element to cache
         @type element: any
+        @param allow_replacement: if this value is false, do not cache if this would kick another element from the cache
+        @type allow_replacement: L{bool}
         @return: True if the element is now cached, False otherwise
         @rtype: L{bool}
         """
         raise NotImplementedError("BaseCache.push() needs to be overwritten in subclasses!")
 
-    def clear(self):
+    def remove(self, key, call_on_leave=True):
+        """
+        If an element is cached for key, remove it from the cache.
+
+        @param key: key of element to remove
+        @type key: hashable
+        @param call_on_leave: if nonzero (default), call L{BaseCache.on_leave} on the removed element
+        @type call_on_leave: L{bool}
+        """
+        raise NotImplementedError("BaseCache.remove() needs to be overwritten in subclasses!")
+
+    def clear(self, call_on_leave=True):
         """
         Empty this cache.
+
+        @param call_on_leave: if nonzero (default), call L{BaseCache.on_leave} for each element cleared
+        @type call_on_leave: L{bool}
         """
         raise NotImplementedError("BaseCache.clear() needs to be overwritten in subclasses!")
 
@@ -84,10 +114,13 @@ class NoOpCache(BaseCache):
     def get(self, key):
         raise KeyError("No element cached for key {}!".format(repr(key)))
 
-    def push(self, key, element):
+    def push(self, key, element, allow_replacement=True):
         return False
 
-    def clear(self):
+    def remove(self, key, call_on_leave=True):
+        pass
+
+    def clear(self, call_on_leave=True):
         pass
 
 
@@ -367,48 +400,94 @@ class LastAccessCache(BaseCache):
 
     @ivar max_size: maximum size of cache in number of elements
     @type max_size: L{int}
+    @ivar lock: thread-safety lock
+    @type lock: L{threading.Lock}
     """
-    def __init__(self, max_size=8):
+    def __init__(self, on_leave=None, max_size=8):
         """
+        @param on_leave: See L{BaseCache.__init__}
+        @type on_leave: callable or L{None}
         @param max_size: maximum size of cache in number of elements
         @type max_size: L{int}
         """
         assert isinstance(max_size, int) and max_size >= 0
+        BaseCache.__init__(self, on_leave=on_leave)
         self.max_size = max_size
         self._list = _DoubleLinkedList()  # list of (key, value)
         self._key2element = {}  # key -> _DoubleLinkedListElement
+        self.lock = threading.Lock()
 
     def has(self, key):
         return key in self._key2element
 
     def get(self, key):
-        try:
-            element = self._key2element[key]
-        except KeyError:
-            raise KeyError("No element cached for key {}!".format(repr(key)))
-        # pull element forward
-        self._list.remove_element(element)
-        self._list.prepend(element)
-        # return only the value
-        return element.value[1]
+        with self.lock:
+            try:
+                element = self._key2element[key]
+            except KeyError:
+                raise KeyError("No element cached for key {}!".format(repr(key)))
+            # pull element forward
+            self._list.remove_element(element)
+            self._list.prepend(element)
+            # return only the value
+            return element.value[1]
 
-    def push(self, key, element):
-        if self.has(key):
-            # already part of the cache
-            return True
-        if self._list.length >= self.max_size:
-            # we need to remove an element first
-            old_key = self._list.tail.value[0]
-            del self._key2element[old_key]
-            self._list.remove_last()
-        # add new element
-        new_element = self._list.prepend((key, element))
-        self._key2element[key] = new_element
-        return True
+    def remove(self, key, call_on_leave=True):
+        with self.lock:
+            try:
+                element = self._key2element[key]
+            except KeyError:
+                # not cached, nothing to do
+                return
+            else:
+                del self._key2element[key]
+                self._list.remove_element(element)
+        if call_on_leave:
+            self.on_leave(element.value[0], element.value[1])
 
-    def clear(self):
-        self._key2element = {}
-        self._list.clear()
+    def push(self, key, element, allow_replacement=True):
+        did_remove_element = False
+        did_add_element = False
+        with self.lock:
+            if key in self._key2element:
+                # remove existing cached element for the key
+                old_element = self._key2element[key]
+                self._list.remove_element(old_element)
+                del self._key2element[key]
+                # we do not call on_leave() here
+            elif (self._list.length >= self.max_size) and allow_replacement:
+                # we need to remove an element first
+                # this case can not occur when the key is already cached
+                old_key, old_value = self._list.tail.value
+                del self._key2element[old_key]
+                self._list.remove_last()
+                did_remove_element = True
+            elif not allow_replacement:
+                # we can not cache the element, as it would kick another
+                # element out of the cache
+                return False
+            # add new element
+            new_element = self._list.prepend((key, element))
+            self._key2element[key] = new_element
+            did_add_element = True
+        # call self.on_leave is necessary
+        if did_remove_element:
+            if self.on_leave is not None:
+                self.on_leave(old_key, old_value)
+        return did_add_element
+
+    def clear(self, call_on_leave=True):
+        removed_elements = []
+        with self.lock:
+            if call_on_leave and (self.on_leave is not None):
+                # store removed elements, so we can call on_leave() on them later
+                for key, value in self._list:
+                    removed_elements.append((key, value))
+            self._key2element = {}
+            self._list.clear()
+        # call on_leave on all removed elements
+        for key, value in removed_elements:
+            self.on_leave(key, value)
 
 
 class TopAccessCache(BaseCache):
@@ -427,19 +506,25 @@ class TopAccessCache(BaseCache):
 
     @ivar max_size: max number of elements to cache
     @type max_size: L{int}
+    @ivar lock: thread-safety lock
+    @type lock: L{threading.Lock}
     """
-    def __init__(self, max_size=8):
+    def __init__(self, on_leave=None, max_size=8):
         """
         The default constructor.
 
+        @param on_leave: See L{BaseCache.__init__}
+        @type on_leave: callable or L{None}
         @param max_size: max number of elements to cache
         @type max_size: L{int}
         """
         assert isinstance(max_size, int) and max_size >= 0
+        BaseCache.__init__(self, on_leave=on_leave)
         self.max_size = max_size
         self._list = _DoubleLinkedList()  # list of (key, element)
         self._key2le = {}  # key -> list element
         self._num_accesses = {}  # key -> number of accesses
+        self.lock = threading.Lock()
 
     def _increment_access_counter(self, key):
         """
@@ -466,7 +551,7 @@ class TopAccessCache(BaseCache):
                     # we need to swap forward
                     le.swap_forward()
 
-    def _replace_tail_if_necessary(self, key, element):
+    def _replace_tail_if_necessary(self, key, element, allow_replacement=True):
         """
         If there is yet no value for the key cached but the access count
         is higher than tail, add this value to the cache.
@@ -475,6 +560,8 @@ class TopAccessCache(BaseCache):
         @type key: hashable
         @param element: element to cache
         @type element: any
+        @param allow_replacement: if this value is false, do not replace tail
+        @type allow_replacement: L{bool}
         @return: True if the element is now cached, False otherwise
         @rtype: L{bool}
         """
@@ -488,14 +575,17 @@ class TopAccessCache(BaseCache):
             self._key2le[key] = le
             return True
         tail = self._list.tail
-        old_key = tail.value[0]
+        old_key, old_value = tail.value
         tail_accesses = self._num_accesses[old_key]
-        if tail_accesses < num_accesses:
+        if (tail_accesses < num_accesses) and allow_replacement:
             # replace tail
             self._list.remove_last()
             del self._key2le[old_key]
             le = self._list.append((key, element))
             self._key2le[key] = le
+            if self.on_leave is not None:
+                # call on_leave on the old element
+                self.on_leave(old_key, old_value)
             return True
         return False
 
@@ -505,17 +595,48 @@ class TopAccessCache(BaseCache):
         return key in self._key2le
 
     def get(self, key):
-        self._increment_access_counter(key)
-        return self._key2le[key].value[1]
+        with self.lock:
+            self._increment_access_counter(key)
+            return self._key2le[key].value[1]
 
-    def push(self, key, element):
-        self._increment_access_counter(key)
-        return self._replace_tail_if_necessary(key, element)
+    def push(self, key, element, allow_replacement=True):
+        with self.lock:
+            self._increment_access_counter(key)
+            in_cache = self._replace_tail_if_necessary(key, element, allow_replacement=allow_replacement)
+            if in_cache:
+                # update cached value
+                # we do this here because we now know that the element
+                # is part of the cache
+                list_element = self._key2le[key]
+                list_element.value = (key, element)
+            return in_cache
 
-    def clear(self):
-        self._list.clear()
-        self._key2le = {}
-        self._num_accesses = {}
+    def remove(self, key, call_on_leave=True):
+        with self.lock:
+            try:
+                element = self._key2le[key]
+            except KeyError:
+                # not cached, nothing to do
+                return
+            else:
+                del self._key2le[key]
+                self._list.remove_element(element)
+        if call_on_leave:
+            self.on_leave(element.value[0], element.value[1])
+
+    def clear(self, call_on_leave=True):
+        removed_elements = []
+        with self.lock:
+            if call_on_leave and (self.on_leave is not None):
+                # store removed elements so we can call on_leave() on them later
+                for key, value in self._list:
+                    removed_elements.append((key, value))
+            self._list.clear()
+            self._key2le = {}
+            self._num_accesses = {}
+        # call on_leave on all removed elements
+        for key, value in removed_elements:
+            self.on_leave(key, value)
 
 
 class HybridCache(BaseCache):
@@ -528,17 +649,37 @@ class HybridCache(BaseCache):
     @ivar top_cache: the top-access cache
     @type top_cache: L{pyzim.cache.TopAccessCache}
     """
-    def __init__(self, last_cache_size=8, top_cache_size=8):
+    def __init__(self, on_leave=None, last_cache_size=8, top_cache_size=8):
         """
         The default constructor.
 
+        @param on_leave: See L{BaseCache.__init__}
+        @type on_leave: callable or L{None}
         @param last_cache_size: size of the last-access cache
         @type last_cache_size: L{int}
         @param top_cache_size: size of the top-access cache
         @type top_cache_size: L{int}
         """
-        self.last_cache = LastAccessCache(last_cache_size)
-        self.top_cache = TopAccessCache(last_cache_size)
+        BaseCache.__init__(self, on_leave=on_leave)
+        self.last_cache = LastAccessCache(on_leave=self._on_leave, max_size=last_cache_size)
+        self.top_cache = TopAccessCache(on_leave=self._on_leave, max_size=last_cache_size)
+
+    def _on_leave(self, key, value):
+        """
+        A helper method that will be called whenever any element leaves
+        one of the wrapped chaches.
+
+        It is used to ensure that even if L{HybridCache.on_leave} is
+        changed after init, the wrapped caches will call the new new
+        function.
+
+        @param key: the key of the element leaving the cache
+        @type key: any
+        @param value: value of the element leaving the cache
+        @type value: any
+        """
+        if self.on_leave is not None:
+            self.on_leave(key, value)
 
     def has(self, key):
         # always hit top cache first
@@ -555,25 +696,33 @@ class HybridCache(BaseCache):
         elif self.last_cache.has(key):
             # we should also push it into the top cache
             value = self.last_cache.get(key)
-            self.top_cache.push(key, value)
+            added_to_top_cache = self.top_cache.push(key, value)
+            if added_to_top_cache:
+                # if the entry is now in the top cache, we should clear
+                # the space in the last cache
+                self.last_cache.remove(key)
             return value
         else:
             raise KeyError("No element cached for key {}!".format(repr(key)))
 
-    def push(self, key, element):
+    def push(self, key, element, allow_replacement=True):
         # push into top cache first
         # this way, we can keep the last access cache clean from top
         # accessed elements
-        did_cache_top = self.top_cache.push(key, element)
+        did_cache_top = self.top_cache.push(key, element, allow_replacement=allow_replacement)
         if did_cache_top:
             return True
-        did_cache_last = self.last_cache.push(key, element)
+        did_cache_last = self.last_cache.push(key, element, allow_replacement=allow_replacement)
         if did_cache_last:
             return True
         # this should probably never happen as the last access cache
         # will always cache
         return False  # pragma: no cover
 
-    def clear(self):
-        self.top_cache.clear()
-        self.last_cache.clear()
+    def remove(self, key, call_on_leave=True):
+        self.top_cache.remove(key, call_on_leave=call_on_leave)
+        self.last_cache.remove(key, call_on_leave=call_on_leave)
+
+    def clear(self, call_on_leave=True):
+        self.top_cache.clear(call_on_leave=call_on_leave)
+        self.last_cache.clear(call_on_leave=call_on_leave)
