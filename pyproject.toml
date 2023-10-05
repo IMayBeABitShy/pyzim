@@ -9,7 +9,7 @@ build-backend = "hatchling.build"
 
 # project metadata
 [project]
-name = "pyzim"
+name = "python-zim"
 version = "0.1.0"
 description = "Library for working with ZIM files"
 authors = [
@@ -39,6 +39,10 @@ all = [
     "tox",
     "pyzstd",
 ]
+
+# wheel generation
+[tool.hatch.build.targets.wheel]
+packages = ["pyzim"]
 
 # project urls
 [project.urls]
