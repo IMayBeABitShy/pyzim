@@ -8,7 +8,7 @@ from .exceptions import BindRequired, ParseError
 from .bindable import BindableMixIn
 from .modifiable import ModifiableMixIn
 from .blob import BaseBlobSource, InMemoryBlobSource
-from .ioutil import read_until_zero
+from .util.ioutil import read_until_zero
 
 
 class BaseEntry(BindableMixIn, ModifiableMixIn):

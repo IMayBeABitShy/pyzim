@@ -5,9 +5,9 @@ import io
 import unittest
 
 from pyzim import constants
-from pyzim.ioutil import read_until_zero, read_n_bytes
+from pyzim.util.ioutil import read_until_zero, read_n_bytes
 
-from .base import TestBase
+from ..base import TestBase
 
 
 class UtilTests(unittest.TestCase, TestBase):

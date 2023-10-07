@@ -5,7 +5,7 @@ import threading
 
 from . import constants
 from .modifiable import ModifiableMixIn
-from .ioutil import read_until_zero
+from .util.ioutil import read_until_zero
 
 
 class MimeTypeList(ModifiableMixIn):

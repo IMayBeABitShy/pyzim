@@ -19,7 +19,7 @@ from .mimetypelist import MimeTypeList
 from .pointerlist import SimplePointerList, OrderedPointerList, TitlePointerList
 from .entry import BaseEntry, RedirectEntry, ContentEntry
 from .policy import Policy, DEFAULT_POLICY
-from .ioutil import read_n_bytes
+from .util.ioutil import read_n_bytes
 from .modifiable import ModifiableMixIn
 from .spaceallocator import SpaceAllocator
 from .operationbuffer import OperationBuffer
