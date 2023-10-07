@@ -1015,6 +1015,12 @@ class Zim(ModifiableMixIn):
             - C{"empty"}: empty the associated blob (see L{pyzim.cluster.ModifiableClusterWrapper.empty_blob})
             - C{"remove"}: delete the blob. Be warned that this will likely cause issues with other indexes.
 
+        If the entry has an associated blob, the cluster will be flushed.
+
+        Redirects pointing towards this url will also be removed. Buffered
+        operations may interfere with this behavior, so be sure to flush()
+        before.
+
         @param full_url: full url of entry to remove
         @type full_url: L{str}
         @param blob: how to treat the associated blob
@@ -1036,6 +1042,7 @@ class Zim(ModifiableMixIn):
         # in order to delete an entry, we need to:
         # - find the entry
         # - process the associated blob
+        # - find and process redirects pointing to this entry
         # - if entry is an article, remove it from the article title list
         # - remove it from the regular title list
         # - remove it from the url list
@@ -1064,6 +1071,13 @@ class Zim(ModifiableMixIn):
             else:  # pragma: no cover
                 raise RuntimeError("Unreachable state reached!")
             cluster.flush()
+        # before we modify the various pointer lists, remove redirects pointing to this entry.
+        # we store the redirects to remove in a list because removing
+        # them directly would interfer with the pointers used by .iter_entries()
+        redirects_to_remove = []
+        for redirect in self.iter_entries():
+            if redirect.is_redirect and redirect.redirect_index == url_index:
+                redirects_to_remove.append(redirect.full_url)
         # remove article title
         # explicitly check for namespace, because entry_at_url_is_article
         # may otherwise raise an exception
@@ -1082,9 +1096,13 @@ class Zim(ModifiableMixIn):
         if self.header.main_page == url_index:
             self.header.main_page = None
         # update other pointers
-        self._update_url_pointers(url_index, -1, edit_atpl=is_article)
+        self._update_url_pointers(start=url_index, diff=-1, edit_atpl=is_article)
         # mark space as free
         self.spaceallocator.mark_free(offset, entry_size)
+        # remove redirects pointing to this url
+        for r_url in redirects_to_remove:
+            logger.log(constants.LOG_LEVEL_WRITE, "Removing redirect for URL {} as it points to removed entry {}".format(r_url, entry.full_url))
+            self.remove_entry_by_full_url(r_url)
 
     def entry_at_url_is_article(self, full_url):
         """
@@ -1245,7 +1263,11 @@ class Zim(ModifiableMixIn):
         else:
             # entry was already part of the archive
             old_offset = self._url_pointer_list.get_by_index(old_url_index)
-            old_size = entry.get_unmodified_disk_size()
+            # PROBLEM: if we override an entry with a new entry with the
+            # same URL but a different title, the calculated old disk
+            # size. This is a temp fix.
+            old_size = self.get_entry_at(old_offset, allow_cache_replacement=False).get_unmodified_disk_size()
+            # old_size = entry.get_unmodified_disk_size()
             disk_size_changed = (old_size != new_size)
             new_entry = False
         url_changed = (old_url != entry.full_url) or new_entry

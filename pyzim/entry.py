@@ -7,6 +7,7 @@ from . import constants
 from .exceptions import BindRequired, ParseError
 from .bindable import BindableMixIn
 from .modifiable import ModifiableMixIn
+from .blob import BaseBlobSource, InMemoryBlobSource
 from .ioutil import read_until_zero
 
 
@@ -67,7 +68,7 @@ class BaseEntry(BindableMixIn, ModifiableMixIn):
         @param url: url of this entry
         @type url: L{str}
         @param title: title of this entry
-        @type title: L{str}
+        @type title: L{str} or L{None}
         @param parameters: extra parameters. Unused, must be empty.
         @type parameters: L{list}
         """
@@ -75,7 +76,7 @@ class BaseEntry(BindableMixIn, ModifiableMixIn):
         assert isinstance(namespace, str)
         assert isinstance(revision, int) and revision == 0
         assert isinstance(url, str)
-        assert isinstance(title, str)
+        assert isinstance(title, str) or title is None
         assert isinstance(parameters, list) and len(parameters) == 0
 
         BindableMixIn.__init__(self)
@@ -528,6 +529,22 @@ class BaseEntry(BindableMixIn, ModifiableMixIn):
         """
         return self  # default case, overwritten in subclasses
 
+    def remove(self, blob="empty"):
+        """
+        Remove this entry from the archive it is bound to.
+
+        @param blob: passed to L{pyzim.archive.Zim.remove_entry_by_full_url}
+        @type blob: L{str}
+        @raises TypeError: on invalid type
+        @raises ValueError: on invalid value
+        @raises pyzim.exceptions.BindRequired: when not bound
+        @raises pyzim.exceptions.NonMutable: if this entry is set to be inmutable.
+        """
+        if not self.bound:
+            raise BindRequired("Removing an entry from an archive requires the entry to be bound!")
+        self.ensure_mutable()
+        self.zim.remove_entry_by_full_url(self.full_url, blob=blob)
+
 
 class ContentEntry(BaseEntry):
     """
@@ -675,8 +692,6 @@ class ContentEntry(BaseEntry):
         namespace = namespace.decode(constants.ENCODING)
         url = read_until_zero(f).decode(constants.ENCODING)
         title = read_until_zero(f).decode(constants.ENCODING)
-        if not title:
-            title = url
         parameters = [read_until_zero(f).decode(constants.ENCODING) for i in range(n_parameters)]
         return cls(
             mimetype,
@@ -691,7 +706,10 @@ class ContentEntry(BaseEntry):
 
     def get_disk_size(self):
         url_size = len(self.url.encode(constants.ENCODING)) + 1  # 1 for the null byte
-        title_size = len(self.title.encode(constants.ENCODING)) + 1  # 1 for the null byte
+        if self._title:
+            title_size = len(self.title.encode(constants.ENCODING)) + 1  # 1 for the null byte
+        else:
+            title_size = 1  # for the 0 byte
         if self.parameters:
             # parameter handling not yet implemented
             raise NotImplementedError("get_disk_size() does not yet support parameters!")
@@ -710,7 +728,7 @@ class ContentEntry(BaseEntry):
             self.blob_number,
         )
         data += self.url.encode(constants.ENCODING) + b"\x00"
-        data += self.title.encode(constants.ENCODING) + b"\x00"
+        data += self._title.encode(constants.ENCODING) + b"\x00"
         # if any parameters were here, they would now be appended
         return data
 
@@ -768,6 +786,33 @@ class ContentEntry(BaseEntry):
             raise BindRequired("Reading the content of this entry requires this entry to be bound!")
         cluster = self.get_cluster()
         yield from cluster.iter_read_blob(self.blob_number, buffersize=buffersize)
+
+    def set_content(self, blob_source):
+        """
+        Set the content of this entry.
+
+        This method does not flush the modified cluster, but it does
+        return the cluster, so you can just call .flush() on this.
+
+        @param blob_source: blob source or str/bytes to use as content
+        @type blob_source: L{pyzim.blob.BaseBlobSource} or L{str} or L{bytes}
+        @return: the cluster this blob is part of
+        @rtype: L{pyzim.cluster.ModifiableClusterWrapper}
+        @raises TypeError: on invalid type
+        @raises pyzim.exceptions.BindRequired: when not bound
+        @raises pyzim.exceptions.NonMutable: if this entry is set to be inmutable.
+        """
+        if not isinstance(blob_source, (BaseBlobSource, str, bytes)):
+            raise TypeError("Expected a BaseBlobSource, string or bytes, got {} instead!".format(type(blob_source)))
+        if not self.bound:
+            raise BindRequired("Setting the content of an entry from an archive requires the entry to be bound!")
+        self.ensure_mutable()
+
+        if isinstance(blob_source, (str, bytes)):
+            blob_source = InMemoryBlobSource(blob_source)
+        cluster = self.get_cluster()
+        cluster.set_blob(self.blob_number, blob_source)
+        return cluster
 
 
 class RedirectEntry(BaseEntry):
@@ -880,8 +925,6 @@ class RedirectEntry(BaseEntry):
         namespace = namespace.decode(constants.ENCODING)
         url = read_until_zero(f).decode(constants.ENCODING)
         title = read_until_zero(f).decode(constants.ENCODING)
-        if not title:
-            title = url
         parameters = [read_until_zero(f).decode(constants.ENCODING) for i in range(n_parameters)]
         return cls(
             namespace,
@@ -894,7 +937,10 @@ class RedirectEntry(BaseEntry):
 
     def get_disk_size(self):
         url_size = len(self.url.encode(constants.ENCODING)) + 1  # 1 for the null byte
-        title_size = len(self.title.encode(constants.ENCODING)) + 1  # 1 for the null byte
+        if self._title:
+            title_size = len(self.title.encode(constants.ENCODING)) + 1  # 1 for the null byte
+        else:
+            title_size = 1  # for the null byte
         if self.parameters:
             # parameter handling not yet implemented
             raise NotImplementedError("get_disk_size() does not yet support parameters!")
@@ -912,7 +958,7 @@ class RedirectEntry(BaseEntry):
             self.redirect_index,
         )
         data += self.url.encode(constants.ENCODING) + b"\x00"
-        data += self.title.encode(constants.ENCODING) + b"\x00"
+        data += self._title.encode(constants.ENCODING) + b"\x00"
         # if any parameters were here, they would now be appended
         return data
 

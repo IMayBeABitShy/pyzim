@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import io
 
 from pyzim.entry import BaseEntry, RedirectEntry, ContentEntry
+from pyzim.blob import InMemoryBlobSource
 from pyzim import constants, exceptions
 
 from .base import TestBase
@@ -509,3 +510,91 @@ class EntryTests(unittest.TestCase, TestBase):
             self.assertEqual(entry.revision, loaded.revision)
             self.assertEqual(entry.parameters, loaded.parameters)
             self.assertEqual(entry.redirect_index, loaded.redirect_index)
+
+    def test_content_entry_remove(self):
+        """
+        Test L{pyzim.entry.ContentEntry.remove}.
+        """
+        for blob in ("keep", "remove", "empty"):
+            with self.open_zts_small_dir() as zimdir:
+                with zimdir.open(mode="u") as zim:
+                    entry = zim.get_mainpage_entry().resolve()
+                    cluster = entry.get_cluster()
+                    old_num_blobs = cluster.get_number_of_blobs()
+                    old_data = cluster.read_blob(entry.blob_number)
+                    entry.remove(blob=blob)
+                    cluster.flush()
+                    with self.assertRaises(exceptions.EntryNotFound):
+                        zim.get_entry_by_full_url(entry.full_url)
+                    if blob == "remove":
+                        self.assertEqual(cluster.get_number_of_blobs(), old_num_blobs - 1)
+                        self.assertNotEqual(cluster.read_blob(entry.blob_number), old_data)
+                    elif blob == "empty":
+                        self.assertEqual(cluster.get_number_of_blobs(), old_num_blobs)
+                        self.assertEqual(cluster.read_blob(entry.blob_number), b"")
+                    elif blob == "keep":
+                        self.assertEqual(cluster.get_number_of_blobs(), old_num_blobs)
+                        self.assertEqual(cluster.read_blob(entry.blob_number), old_data)
+                    else:
+                        raise AssertionError("Unreachable state in test!")
+                    # test unbound error
+                    entry.unbind()
+                    with self.assertRaises(exceptions.BindRequired):
+                        entry.remove(blob=blob)
+
+    def test_redirect_entry_remove(self):
+        """
+        Test L{pyzim.entry.RedirectEntry.remove}.
+        """
+        for blob in ("keep", "remove", "empty"):
+            with self.open_zts_small_dir() as zimdir:
+                with zimdir.open(mode="u") as zim:
+                    entry = zim.get_mainpage_entry()
+                    target = entry.resolve()
+                    old_data = target.read()
+                    entry.remove(blob=blob)
+                    with self.assertRaises(exceptions.EntryNotFound):
+                        zim.get_entry_by_full_url(entry.full_url)
+                    # removing the redirect should not affect target
+                    self.assertEqual(zim.get_entry_by_full_url(target.full_url).read(), old_data)
+                    # test unbound error
+                    entry.unbind()
+                    with self.assertRaises(exceptions.BindRequired):
+                        entry.remove(blob=blob)
+
+    def test_set_content(self):
+        """
+        Test l{pyzim.entry.ContentEntry.set_content}.
+        """
+        with self.open_zts_small_dir() as zimdir:
+            with zimdir.open(mode="u") as zim:
+                entry = zim.get_mainpage_entry().resolve()
+                # test type errors
+                with self.assertRaises(TypeError):
+                    entry.set_content(1234)
+                # test actual run
+                # binary data
+                data_1 = b"binary data"
+                cluster_1 = entry.set_content(data_1)
+                cluster_1.flush()
+                data_1_copy = zim.get_entry_by_full_url(entry.full_url).read()
+                self.assertEqual(data_1_copy, data_1)
+                # unicode data
+                data_2 = u"Unicode data"
+                cluster_2 = entry.set_content(data_2)
+                self.assertIs(cluster_2, cluster_1)
+                cluster_2.flush()
+                data_2_copy = zim.get_entry_by_full_url(entry.full_url).read().decode(constants.ENCODING)
+                self.assertEqual(data_2_copy, data_2)
+                # blob source
+                data_3_raw = b"blob source data"
+                data_3 = InMemoryBlobSource(data_3_raw)
+                cluster_3 = entry.set_content(data_3)
+                self.assertIs(cluster_3, cluster_1)
+                cluster_3.flush()
+                data_3_copy = zim.get_entry_by_full_url(entry.full_url).read()
+                self.assertEqual(data_3_copy, data_3_raw)
+                # test unbound error
+                entry.unbind()
+                with self.assertRaises(exceptions.BindRequired):
+                    entry.set_content(b"this should fail")
