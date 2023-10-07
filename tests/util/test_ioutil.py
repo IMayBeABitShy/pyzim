@@ -1,5 +1,5 @@
 """
-Tests for L{pyzim.ioutil}.
+Tests for L{pyzim.util.ioutil}.
 """
 import io
 import unittest
@@ -10,9 +10,9 @@ from pyzim.util.ioutil import read_until_zero, read_n_bytes
 from ..base import TestBase
 
 
-class UtilTests(unittest.TestCase, TestBase):
+class IoUtilTests(unittest.TestCase, TestBase):
     """
-    Tests for L{pyzim.ioutil}.
+    Tests for L{pyzim.util.ioutil}.
     """
     def test_read_until_zero(self):
         """
