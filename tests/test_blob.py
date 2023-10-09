@@ -6,7 +6,7 @@ import os
 
 import unittest
 
-from pyzim.blob import BaseBlobSource, BaseBlob, InMemoryBlobSource, FileBlobSource, EmptyBlobSource
+from pyzim.blob import BaseBlobSource, BaseBlob, InMemoryBlobSource, FileBlobSource, EmptyBlobSource, EntryBlobSource, EntryBlob
 from pyzim.constants import ENCODING
 
 from .base import TestBase
@@ -163,3 +163,36 @@ class BlobTests(unittest.TestCase, TestBase):
         self.assertTrue(isinstance(data, bytes))
         self.assertEqual(data, b"")
         blob.close()
+
+    def test_entry(self):
+        """
+        Test L{pyzim.blob.EntryBlobSource}.
+        """
+        with self.open_zts_small() as zim:
+            mainpage = zim.get_mainpage_entry().resolve()
+            data = mainpage.read()
+            source = EntryBlobSource(mainpage)
+            self.assertEqual(source.get_size(), mainpage.get_size())
+            blob = source.get_blob()
+            self.assertEqual(blob.get_size(), mainpage.get_size())
+            read_data = b""
+            chunk = True
+            while chunk:
+                chunk = blob.read(4096)
+                read_data += chunk
+            self.assertEqual(read_data, data)
+            self.assertEqual(len(read_data), mainpage.get_size())
+            blob.close()
+            # also test EntryBlob without size specification
+            mainpage = zim.get_mainpage_entry().resolve()
+            data = mainpage.read()
+            blob = EntryBlob(mainpage)
+            self.assertEqual(blob.get_size(), mainpage.get_size())
+            read_data = b""
+            chunk = True
+            while chunk:
+                chunk = blob.read(4096)
+                read_data += chunk
+            self.assertEqual(read_data, data)
+            self.assertEqual(len(read_data), mainpage.get_size())
+            blob.close()

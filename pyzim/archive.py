@@ -318,11 +318,15 @@ class Zim(ModifiableMixIn):
         self._entry_title_pointer_list.mutable = self._writable
         self.add_submodifiable(self._entry_title_pointer_list)
         # the article title pointer list
-        self._article_title_pointer_list = TitlePointerList.from_bytes(
-            self.get_entry_by_full_url(constants.URL_ARTICLE_TITLE_INDEX).read(),
-            key_func=self._get_title_for_entry_by_url_index,
-        )
-        logger.debug("Article title pointer list has {} entries.".format(len(self._article_title_pointer_list)))
+        if self.has_entry_for_full_url(constants.URL_ARTICLE_TITLE_INDEX):
+            self._article_title_pointer_list = TitlePointerList.from_bytes(
+                self.get_entry_by_full_url(constants.URL_ARTICLE_TITLE_INDEX).read(),
+                key_func=self._get_title_for_entry_by_url_index,
+            )
+            logger.debug("Article title pointer list has {} entries.".format(len(self._article_title_pointer_list)))
+        else:
+            logger.debug("No article title pointer list found, creating a new one")
+            self._article_title_pointer_list = TitlePointerList([], key_func=self._get_title_for_entry_by_url_index)
         self._article_title_pointer_list.mutable = self._writable
         self.add_submodifiable(self._article_title_pointer_list)
         logger.debug("Pointerlists loaded.")

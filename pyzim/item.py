@@ -5,7 +5,7 @@ This behavior is inspired by the original libzim. Using items is
 optional, but definitely helpful.
 """
 from pyzim import constants
-from pyzim.blob import BaseBlobSource
+from pyzim.blob import BaseBlobSource, EntryBlobSource
 from pyzim.entry import ContentEntry
 
 
@@ -258,3 +258,27 @@ class Item(object):
         entry.is_article = self.is_article
         entry.bind(zim)
         return entry
+
+    @classmethod
+    def from_entry(cls, entry):
+        """
+        Create an item from an entry.
+
+        @param entry: entry to create item from
+        @type entry: L{pyzim.entry.ContentEntry}
+        @return: the created item
+        @rtype: L{Item}
+        @raises TypeError: on type error
+        """
+        if not isinstance(entry, ContentEntry):
+            raise TypeError("Expected a ContentEntry, got {} instead!".format(type(entry)))
+        title = (entry.title if entry.title else None)
+        item = cls(
+            namespace=entry.namespace,
+            url=entry.url,
+            mimetype=entry.mimetype,
+            blob_source=EntryBlobSource(entry),
+            title=title,
+            is_article=entry.is_article,
+        )
+        return item

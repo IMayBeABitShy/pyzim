@@ -31,7 +31,7 @@ def iter_by_cluster(zim):
         raise TypeError("Expected a Zim, got {} instead!".format(type(zim)))
     cluster_num2urls = {}  # map cluster_num -> [(blob_num, url), ...]
     # group entries
-    for entry in zim.iter_entries():
+    for entry in zim.iter_entries_by_url():
         url = entry.full_url
         if entry.is_redirect:
             cluster_num = -1

@@ -257,3 +257,72 @@ class EmptyBlob(BaseBlob):
 
     def close(self):
         pass
+
+
+class EntryBlobSource(BaseBlobSource):
+    """
+    A L{BaseBlobSource} that provides the content from an entry.
+
+    This is useful if you want to create an item from an existing entry.
+
+    NOTE: this BlobSource does not keep a copy of the entry in RAM.
+    Instead, the content will be read as needed.
+    """
+    def __init__(self, entry):
+        """
+        The default constructor.
+
+        @param entry: entry to get content from
+        @type entry: L{pyzim.entry.ContentEntry}
+        """
+        self._entry = entry
+        self._size = entry.get_size()
+
+    def get_size(self):
+        return self._size
+
+    def get_blob(self):
+        return EntryBlob(self._entry, size=self._size)
+
+
+class EntryBlob(BaseBlob):
+    """
+    A L{BaseBlob} used by L{EntryBlobSource}.
+    """
+    def __init__(self, entry, size=None):
+        """
+        The default constructor.
+
+        @param entry: entry to get content from
+        @type entry: L{pyzim.entry.ContentEntry}
+        @param size: size of the entry. Setting this improves performance.
+        @type size: L{int} or L{None}
+        """
+        self._entry = entry
+        if size is None:
+            size = self._entry.get_size()
+        self._size = size
+        self._read_iter = None
+        self._closed = False
+
+    def get_size(self):
+        return self._size
+
+    def read(self, n):
+        if self._closed:
+            return b""
+        if self._read_iter is None:
+            self._read_iter = self._entry.iter_read()
+        try:
+            return next(self._read_iter)
+        except StopIteration:
+            # end of file
+            self.close()
+            return b""
+
+    def close(self):
+        self._closed = True
+        if self._read_iter is not None:
+            # finish reading so that the context exists gracefully
+            for e in self._read_iter:
+                pass

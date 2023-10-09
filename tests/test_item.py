@@ -98,7 +98,7 @@ class ItemTests(unittest.TestCase, TestBase):
 
     def test_to_entry(self):
         """
-        test L{pyzim.item.Item.to_entry}.
+        Test L{pyzim.item.Item.to_entry}.
         """
         with self.open_zts_small_dir() as zimdir:
             with zimdir.open(mode="a") as zim:
@@ -125,3 +125,21 @@ class ItemTests(unittest.TestCase, TestBase):
                 self.assertEqual(entry.mimetype, mimetype)
                 self.assertEqual(entry.title, title)
                 self.assertTrue(entry.is_article)
+
+    def test_from_entry(self):
+        """
+        Test L{pyzim.entry.from_entry}.
+        """
+        # test type error
+        with self.assertRaises(TypeError):
+            Item.from_entry(3)
+        # test from_entry
+        with self.open_zts_small() as zim:
+            entry = zim.get_mainpage_entry().resolve()
+            item = Item.from_entry(entry)
+            self.assertEqual(item.namespace, entry.namespace)
+            self.assertEqual(item.url, entry.url)
+            self.assertEqual(item.mimetype, entry.mimetype)
+            self.assertEqual(item.title, entry.title)
+            self.assertEqual(item.is_article, entry.is_article)
+            self.assertEqual(item.blob_source.get_blob().read(4096), entry.read())
