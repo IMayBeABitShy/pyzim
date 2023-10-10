@@ -21,7 +21,7 @@ choosen compression level and type for a cluster.
 """
 from . import constants
 from .cluster import Cluster, OffsetRememberingCluster, InMemoryCluster
-from .compression import CompressionTarget
+from .compression import CompressionTarget, CompressionType
 from .compressionstrategy import BaseCompressionStrategy, SimpleCompressionStrategy
 from .cache import BaseCache, NoOpCache, LastAccessCache, HybridCache
 
@@ -47,6 +47,10 @@ class Policy(object):
     @type compression_strategy_class: L{pyzim.compressionstrategy.BaseCompressionStrategy}
     @ivar compression_strategy_kwargs: kwargs of compression strategy to use (excluding C{"zim"})
     @type compression_strategy_kwargs: L{dict}
+    @ivar uncompressed_compression_strategy_class: compression strategy to use when writing new items for the uncompressed clusters
+    @type uncompressed_compression_strategy_class: L{pyzim.compressionstrategy.BaseCompressionStrategy}
+    @ivar uncompressed_compression_strategy_kwargs: kwargs of compression strategy to use (excluding C{"zim"})
+    @type uncompressed_compression_strategy_kwargs: L{dict}
     @ivar autoflush: automatically write modified clusters and entries. Requires caches to be used. NOTE: cache size should at leat be 2 in this case!
     @type autoflush: L{bool}
     @ivar truncate: if nonzero, truncate when flushing the file
@@ -64,6 +68,8 @@ class Policy(object):
         cluster_cache_kwargs=None,
         compression_strategy_class=None,
         compression_strategy_kwargs=None,
+        uncompressed_compression_strategy_class=None,
+        uncompressed_compression_strategy_kwargs=None,
         autoflush=True,
         truncate=False,
         reserve_mimetype_space=2048,
@@ -86,7 +92,11 @@ class Policy(object):
         @param compression_strategy_class: compression strategy to use when writing new items
         @type compression_strategy_class: subclass of L{pyzim.compressionstrategy.BaseCompressionStrategy} or L{None}
         @ivar compression_strategy_kwargs: kwargs of compression strategy to use (excluding C{"zim"})
-        @type compression_strategy_kwargs: L{dict}
+        @type compression_strategy_kwargs: L{dict} or L{None}
+        @ivar uncompressed_compression_strategy_class: compression strategy to use when writing new items for the uncompressed clusters
+        @type uncompressed_compression_strategy_class: L{pyzim.compressionstrategy.BaseCompressionStrategy}
+        @ivar uncompressed_compression_strategy_kwargs: kwargs of compression strategy to use (excluding C{"zim"})
+        @type uncompressed_compression_strategy_kwargs: L{dict} or L{None}
         @param autoflush: automatically write modified clusters and entries. Requires caches to be used. NOTE: cache size should at leat be 2 in this case!
         @type autoflush: L{bool}
         @param truncate: if nonzero, truncate when flushing the file
@@ -126,6 +136,18 @@ class Policy(object):
             compression_strategy_kwargs = {}
         assert isinstance(compression_strategy_kwargs, dict)
         assert "zim" not in compression_strategy_kwargs
+        if uncompressed_compression_strategy_class is None:
+            uncompressed_compression_strategy_class = SimpleCompressionStrategy
+            # if no kwargs are set, use specific defaults
+            if uncompressed_compression_strategy_kwargs is None:
+                uncompressed_compression_strategy_kwargs = {
+                    "compression_type": CompressionType.NONE,
+                }
+        assert issubclass(uncompressed_compression_strategy_class, BaseCompressionStrategy)
+        if uncompressed_compression_strategy_kwargs is None:
+            uncompressed_compression_strategy_kwargs = {}
+        assert isinstance(uncompressed_compression_strategy_kwargs, dict)
+        assert "zim" not in compression_strategy_kwargs
         assert (reserve_mimetype_space is None) or (isinstance(reserve_mimetype_space, int) and reserve_mimetype_space > 2)
 
         self.compression_options = compression_options
@@ -136,6 +158,8 @@ class Policy(object):
         self.cluster_cache_kwargs = cluster_cache_kwargs
         self.compression_strategy_class = compression_strategy_class
         self.compression_strategy_kwargs = compression_strategy_kwargs
+        self.uncompressed_compression_strategy_class = uncompressed_compression_strategy_class
+        self.uncompressed_compression_strategy_kwargs = uncompressed_compression_strategy_kwargs
         self.autoflush = autoflush
         self.truncate = truncate
         self.reserve_mimetype_space = reserve_mimetype_space

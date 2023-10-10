@@ -11,13 +11,13 @@ import os
 import logging
 
 from . import constants
-from .blob import InMemoryBlobSource
+from .blob import InMemoryBlobSource, EmptyBlobSource
 from .cluster import ModifiableClusterWrapper, EmptyCluster
 from .exceptions import ZimFileClosed, EntryNotFound, BindingError, ZimWriteException
 from .header import Header
 from .mimetypelist import MimeTypeList
 from .pointerlist import SimplePointerList, OrderedPointerList, TitlePointerList
-from .entry import BaseEntry, RedirectEntry, ContentEntry
+from .entry import BaseEntry, RedirectEntry
 from .policy import Policy, DEFAULT_POLICY
 from .util.ioutil import read_n_bytes
 from .modifiable import ModifiableMixIn
@@ -58,6 +58,8 @@ class Zim(ModifiableMixIn):
     @type spaceallocator: L{pyzim.spaceallocator.SpaceAllocator} or L{None}
     @ivar compression_strategy: compression strategy for assigning new items to clusters
     @type compression_strategy: L{pyzim.compressionstrategy.BaseCompressionStrategy} or L{None}
+    @ivar uncompressed_compression_strategy: compression strategy for assigning new items to clusters that are explicity uncompressed
+    @type uncompressed_compression_strategy: L{pyzim.compressionstrategy.BaseCompressionStrategy} or L{None}
 
     @ivar _f: the underlying file object
     @type _f: file-like object
@@ -121,6 +123,8 @@ class Zim(ModifiableMixIn):
         self._init_caches()
 
         if self._mode in ("r", "u", "a"):
+            # this is not a new file
+            new_file = False
             # need to load header, mimetypes, pointerlist, ...
             if self._mode == "r":
                 # read only
@@ -135,13 +139,14 @@ class Zim(ModifiableMixIn):
             self._load_pointerlists()
             self.spaceallocator = SpaceAllocator(file_end=self.header.checksum_position)
         elif self._mode == "w":
+            # this is a new file
+            new_file = True
             # create new header, mimetypelist, pointerlists, ...
             logger.info("Creating a new ZIM archive...")
             self._writable = True
             with self.filelock:
                 self._f.seek(self._base_offset)
                 self._f.truncate()
-            self._init_new()
         else:
             raise ValueError("Unrecognized mode: '{}'!".format(mode))
 
@@ -152,11 +157,19 @@ class Zim(ModifiableMixIn):
                 zim=self,
                 **self.policy.compression_strategy_kwargs,
             )
+            self.uncompressed_compression_strategy = self.policy.uncompressed_compression_strategy_class(
+                zim=self,
+                **self.policy.uncompressed_compression_strategy_kwargs,
+            )
             self._operation_buffer = OperationBuffer(self)
         else:
-            # no need to instantiate a compression strategy
+            # no need to instantiate a compression strategy or related components
             self.compression_strategy = None
+            self.uncompressed_compression_strategy = None
             self._operation_buffer = None
+        if new_file:
+            # finalize init for new archive, which requires compression strategy to be initialized
+            self._init_new()
         self.after_flush_or_read()
         logger.info("ZIM archive ready.")
 
@@ -327,6 +340,18 @@ class Zim(ModifiableMixIn):
         else:
             logger.debug("No article title pointer list found, creating a new one")
             self._article_title_pointer_list = TitlePointerList([], key_func=self._get_title_for_entry_by_url_index)
+            if self._writable:
+                # add a placeholder item for the list, so we can later
+                # set the blob directly
+                article_title_pointer_placeholder_item = Item(
+                    namespace="X",
+                    url=constants.URL_ARTICLE_TITLE_INDEX[1:],  # remove namespace
+                    mimetype=constants.MIMETYPE_ZIMLISTING,
+                    blob_source=EmptyBlobSource(),
+                    is_article=False,
+                )
+                self.add_item(article_title_pointer_placeholder_item, force_uncompressed=True)
+                self.uncompressed_compression_strategy.flush()
         self._article_title_pointer_list.mutable = self._writable
         self.add_submodifiable(self._article_title_pointer_list)
         logger.debug("Pointerlists loaded.")
@@ -374,21 +399,27 @@ class Zim(ModifiableMixIn):
         self._cluster_num = 0
         logger.debug("Writing placeholder entry for v0 title index...")
         # we insert a placeholder entry for the title index, so that
-        # the various lists already contain a pointer.
-        title_pointer_placeholder_entry = ContentEntry(
-            mimetype=self.mimetypelist.get_index(constants.MIMETYPE_ZIMLISTING, register=True),
+        # the various lists already contain a pointer and we have
+        # an associated blob and cluster.
+        title_pointer_placeholder_item = Item(
             namespace="X",
             url=constants.URL_ENTRY_TITLE_INDEX[1:],  # remove namespace
-            revision=0,
-            cluster_number=0,
-            blob_number=0,
-            title=constants.URL_ENTRY_TITLE_INDEX[1:],
-            parameters=[],
+            mimetype=constants.MIMETYPE_ZIMLISTING,
+            blob_source=EmptyBlobSource(),
+            is_article=False,
         )
-        title_pointer_placeholder_entry.bind(self)
-        self.write_entry(
-            title_pointer_placeholder_entry,
+        # we also do this for the article pointer list
+        article_title_pointer_placeholder_item = Item(
+            namespace="X",
+            url=constants.URL_ARTICLE_TITLE_INDEX[1:],  # remove namespace
+            mimetype=constants.MIMETYPE_ZIMLISTING,
+            blob_source=EmptyBlobSource(),
+            is_article=False,
         )
+        self.add_item(title_pointer_placeholder_item, force_uncompressed=True)
+        self.add_item(article_title_pointer_placeholder_item, force_uncompressed=True)
+        # ensure placeholders are written
+        self.uncompressed_compression_strategy.flush()
         logger.debug("Initial components ready.")
 
     def _get_full_url_for_entry_at(self, location):
@@ -512,8 +543,9 @@ class Zim(ModifiableMixIn):
         # flush our compression strategy so that all our entries and
         # clusters get written
         # NOTE: we do this once more later on
-        logger.debug("Flushing compression strategy...")
+        logger.debug("Flushing compression strategies...")
         self.compression_strategy.flush()
+        self.uncompressed_compression_strategy.flush()
         # apply any remaining operations that required all entries to be added
         # TODO: this would be preferable after the title pointer lists have been written.
         logger.debug("Applying buffered operations depending on entries...")
@@ -536,76 +568,30 @@ class Zim(ModifiableMixIn):
         # article title pointer list
         if self._article_title_pointer_list.dirty:
             logger.debug("Writing article title pointer list...")
-            self.add_item(
-                Item(
-                    namespace="X",
-                    url=constants.URL_ARTICLE_TITLE_INDEX[1:],
-                    mimetype="application/octet-stream+zimlisting",
-                    blob_source=InMemoryBlobSource(self._article_title_pointer_list.to_bytes()),
-                ),
-            )
+            article_title_pointer_entry = self.get_entry_by_full_url(constants.URL_ARTICLE_TITLE_INDEX)
+            article_title_pointer_entry.set_content(InMemoryBlobSource(self._article_title_pointer_list.to_bytes())).flush()
             self._article_title_pointer_list.after_flush_or_read()
             # TODO: delete old list
         # entry title pointer list
         # after article pointer list, as that title is included here too
         if self._entry_title_pointer_list.dirty:
             logger.debug("Writing entry title pointer list...")
-
-            # so, preferably we would use add_item() here (as commented
-            # out below), so that we can take advantage of compression
-            # currently, however, we need to be capable of setting
-            # header.title_pointer_position to the data of this entry
-            # so we need to manually set this value
-
-            # item version
-            # use this one once https://github.com/openzim/libzim/issues/800 is done
-            '''
-            self.add_item(
-                Item(
-                    namespace="X",
-                    url="listing/titleOrdered/v0",
-                    mimetype="application/octet-stream+zimlisting",
-                    blob_source=InMemoryBlobSource(self._entry_title_pointer_list.to_bytes()),
-                ),
-            )
-            '''
-            # direct version - remove once item version is usable
             self.compression_strategy.flush()
+            self.uncompressed_compression_strategy.flush()
             # the URL and title will already be part of the lists, as these
             # entries are added as placeholders when initiating as new
-            # TODO: mark previously used space of cluster as free.
-            old_title_list_entry = self.get_entry_by_full_url(constants.URL_ENTRY_TITLE_INDEX)
-            if not (old_title_list_entry.cluster_number == 0 and old_title_list_entry.blob_number == 0):
-                # this is most likely not the placeholder entry
-                # this means that there was a previous list
-                # Remove that associated cluster (which should be exclusively used by the list)
-                self.remove_cluster_by_index(old_title_list_entry.cluster_number)
-            cluster = self.new_cluster()
-            entry_title_blob = InMemoryBlobSource(self._entry_title_pointer_list.to_bytes())
-            cluster.append_blob(entry_title_blob)
-            cluster.compression = 1  # no compression, use numeric value to avoid import
-            cluster_num = self.write_cluster(cluster)
-            entry = ContentEntry(
-                mimetype=self.mimetypelist.get_index("application/octet-stream+zimlisting", register=True),
-                namespace="X",
-                revision=0,
-                cluster_number=cluster_num,
-                blob_number=0,
-                url=constants.URL_ENTRY_TITLE_INDEX[1:],
-                title=constants.URL_ENTRY_TITLE_INDEX[1:],
-                parameters=[],
-            )
-            entry.bind(self)
-            self.write_entry(entry, add_to_title_pointer_list=True)
+            entry_title_pointer_entry = self.get_entry_by_full_url(constants.URL_ENTRY_TITLE_INDEX)
+            entry_title_cluster = entry_title_pointer_entry.set_content(InMemoryBlobSource(self._entry_title_pointer_list.to_bytes()))
+            entry_title_cluster.flush()
             # calculate and set offset
             # this should be:
             # - the offset of the cluster
             # - 1 for the infobyte
             # - the offset of the first blob
-            self.header.title_pointer_position = self._cluster_pointer_list.get_by_index(cluster_num) + 1 + cluster.get_offset(0)
-            # end of direct version
+            entry_title_cluster_offset = self._cluster_pointer_list.get_by_index(entry_title_pointer_entry.cluster_number)
+            entry_title_blob_offset = entry_title_cluster.get_offset(entry_title_pointer_entry.blob_number)
+            self.header.title_pointer_position = entry_title_cluster_offset + 1 + entry_title_blob_offset
             self._entry_title_pointer_list.after_flush_or_read()
-            # TODO: delete old list
 
         # At this point, we've added all items already.
         # We need to flush our compression strategy, so that all
@@ -1656,6 +1642,7 @@ class Zim(ModifiableMixIn):
             cluster_num = self._new_cluster_num()
         elif cluster_num is None:
             cluster_num = self.get_cluster_index_by_offset(cluster.offset)
+            logger.log(constants.LOG_LEVEL_WRITE, "Writing existing cluster, previously located at {}".format(cluster.offset))
         logger.log(constants.LOG_LEVEL_WRITE, "Cluster number is {}".format(cluster_num))
         # secondly, find a new position for the cluster
         # it would be nice if we could write the cluster to the same
@@ -1838,7 +1825,7 @@ class Zim(ModifiableMixIn):
 
     # =========== item interface ===============
 
-    def add_item(self, item):
+    def add_item(self, item, force_uncompressed=False):
         """
         Add an item to this archive.
 
@@ -1846,6 +1833,8 @@ class Zim(ModifiableMixIn):
 
         @param item: item to write
         @type item: L{pyzim.item.Item}
+        @param force_uncompressed: if nonzero, add the item to the compression strategy for uncompressed content, regardless of other options
+        @type force_uncompressed: L{bool}
         @raises TypeError: on type error
         @raises pyzim.exceptions.ZimFileClosed: if archive is already closed
         @raises pyzim.exceptions.NonMutable: if this zim file is not mutable
@@ -1855,7 +1844,10 @@ class Zim(ModifiableMixIn):
         self._check_closed()
         self.ensure_mutable()
 
-        self.compression_strategy.add_item(item)
+        if not force_uncompressed:
+            self.compression_strategy.add_item(item)
+        else:
+            self.uncompressed_compression_strategy.add_item(item)
         self.mark_dirty()
 
     # =========== checksum functions ==============

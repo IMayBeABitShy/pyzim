@@ -388,7 +388,7 @@ class ClusterTests(unittest.TestCase, TestBase):
         raw_data = cluster.generate_infobyte() + b"0123456789"
         f = io.BytesIO(raw_data)
 
-        with self.open_zts_small() as zim:
+        with self.open_zts_small(policy=self.get_policy()) as zim:
             fmock = mock.MagicMock()
             fmock.return_value.__enter__.return_value = f
             zim.acquire_file = fmock
@@ -421,6 +421,23 @@ class ClusterTests(unittest.TestCase, TestBase):
                 self.assertEqual(reader.read(2), b"67")
                 self.assertIs(reader, reader_3)
 
+    def test_reset_base(self):
+        """
+        Test L{pyzim.cluster.Cluster.reset}.
+        """
+        with self.open_zts_small(policy=self.get_policy()) as zim:
+            cluster = zim.get_cluster_by_index(0)
+            self.assertIsNone(cluster.compression)
+            self.assertIsNone(cluster.is_extended)
+            self.assertFalse(cluster.did_read_infobyte)
+            cluster.read_blob(0)
+            self.assertIsNotNone(cluster.compression)
+            self.assertIsNotNone(cluster.is_extended)
+            cluster.reset()
+            self.assertIsNone(cluster.compression)
+            self.assertIsNone(cluster.is_extended)
+            self.assertFalse(cluster.did_read_infobyte)
+
 
 class OffsetRememberingClusterTests(ClusterTests):
     """
@@ -428,12 +445,36 @@ class OffsetRememberingClusterTests(ClusterTests):
     """
     cluster_class = OffsetRememberingCluster
 
+    def test_reset_offsets(self):
+        """
+        Test L{pyzim.cluster.OffsetRememberingCluster.reset}.
+        """
+        with self.open_zts_small(policy=self.get_policy()) as zim:
+            cluster = zim.get_cluster_by_index(0)
+            self.assertIsNone(cluster._offsets)
+            cluster.read_blob(0)
+            self.assertIsNotNone(cluster._offsets)
+            cluster.reset()
+            self.assertIsNone(cluster._offsets)
 
-class InMemoryClusterTests(ClusterTests):
+
+class InMemoryClusterTests(OffsetRememberingClusterTests):
     """
     Tests for L{pyzim.cluster.InMemoryCluster}.
     """
     cluster_class = InMemoryCluster
+
+    def test_reset_data(self):
+        """
+        Test L{pyzim.cluster.InMemoryCluster.reset}.
+        """
+        with self.open_zts_small(policy=self.get_policy()) as zim:
+            cluster = zim.get_cluster_by_index(0)
+            self.assertIsNone(cluster._data)
+            cluster.read_blob(0)
+            self.assertIsNotNone(cluster._data)
+            cluster.reset()
+            self.assertIsNone(cluster._data)
 
 
 class ModifiableClusterWrapperTests(ClusterTests):
@@ -823,6 +864,21 @@ class ModifiableClusterWrapperTests(ClusterTests):
                 new_content_size = cluster.get_content_size()
                 expected_content_size = org_content_size - removed_size - prev_size + new_size
                 self.assertEqual(new_content_size, expected_content_size)
+
+    def test_reset_base(self):
+        """
+        Test L{pyzim.cluster.ModifiableClusterWrapper.reset}.
+        """
+        with self.open_zts_small_dir() as zimdir:
+            with zimdir.open(policy=self.get_policy()) as zim:
+                cluster = zim.get_cluster_by_index(0)
+                cluster.read_blob(0)
+                self.assertIsNotNone(cluster.compression)
+                self.assertIsNotNone(cluster.is_extended)
+                cluster.reset()
+                self.assertIsNone(cluster.compression)
+                self.assertIsNone(cluster.is_extended)
+                self.assertFalse(cluster.did_read_infobyte)
 
 
 class ClusterBehaviorEquivalenceTests(unittest.TestCase, TestBase):

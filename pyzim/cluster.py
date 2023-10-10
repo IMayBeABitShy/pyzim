@@ -51,6 +51,14 @@ class Cluster(BindableMixIn):
         # attributes for decompressor recycling
         self._decompressing_reader = None
 
+    def reset(self):
+        """
+        Reset all internal state except the cluster offset, causing said
+        offset to be read again the next time it is required.
+        """
+        self.compression = None
+        self.is_extended = None
+
     def _seek_if_needed(self, f, offset):
         """
         Seek to the specified position (relative to the cluster start)
@@ -479,6 +487,10 @@ class OffsetRememberingCluster(Cluster):
         Cluster.__init__(self, zim=zim, offset=offset)
         self._offsets = None
 
+    def reset(self):
+        self._offsets = None
+        Cluster.reset(self)
+
     def _read_offsets_if_needed(self):
         """
         Read the offsets if they have not yet been read.
@@ -506,6 +518,10 @@ class InMemoryCluster(OffsetRememberingCluster):
     def __init__(self, zim=None, offset=None):
         OffsetRememberingCluster.__init__(self, zim=zim, offset=offset)
         self._data = None
+
+    def reset(self):
+        self._data = None
+        OffsetRememberingCluster.reset(self)
 
     def _read_if_needed(self):
         """
@@ -581,6 +597,10 @@ class EmptyCluster(Cluster):
         self.compression = CompressionType.NONE  # makes some size calculations easier
         self.is_extended = False
 
+    def reset(self):
+        self.compression = CompressionType.NONE
+        self.is_extended = False
+
     def get_blob_size(self, i):
         assert isinstance(i, int) and i >= 0
         raise BlobNotFound("Empty clusters are always empty!")
@@ -609,7 +629,7 @@ class EmptyCluster(Cluster):
         if i == 0:
             # the 0 offset points to the end of the offsets
             return struct.calcsize(self._pointer_format)
-        raise IndexError("No such offset in empty blob: {}".format(i))
+        raise IndexError("No such offset in empty cluster: {}".format(i))
 
     def iter_blob_offsets(self, blob_numbers=None):
         if (blob_numbers is None) or (0 in blob_numbers):
@@ -619,11 +639,11 @@ class EmptyCluster(Cluster):
     def iter_read_blob(self, i, buffersize=4096):
         assert isinstance(i, int) and i >= 0
         assert isinstance(buffersize, int) and buffersize >= 0
-        raise BlobNotFound("Empty blobs are always empty!")
+        raise BlobNotFound("Empty clusters are always empty!")
 
     def read_blob(self, i):
         assert isinstance(i, int) and i >= 0
-        raise BlobNotFound("Empty blobs are always empty!")
+        raise BlobNotFound("Empty clusters are always empty!")
 
     def read_infobyte(self):
         # what should we do here?
@@ -683,6 +703,27 @@ class ModifiableClusterWrapper(Cluster, ModifiableMixIn):
         if self.bound:
             # we can only find the size if the cluster is bound
             self.after_flush_or_read()
+
+    def reset(self):
+        # reset wrapped cluster and all modifications
+        if isinstance(self._cluster, EmptyCluster):
+            # special case: the empty cluster is intended as a helper
+            # for the wrapper. There is no situation in which we should
+            # reset this cluster when wrapping an empty cluster
+            # this may be slightly unexpected behavior for users, but
+            # do not reset this wrapper in this case.
+            return
+        self._cluster.reset()
+        self._force_extension = None
+        self._force_compression = None
+        self._blobs = {}
+        self._added_blobs = []
+        self._removed_blobs = []
+        Cluster.reset(self)
+
+    def after_flush_or_read(self):
+        self.reset()
+        ModifiableMixIn.after_flush_or_read(self)
 
     @property
     def _has_modifications(self):
@@ -881,6 +922,7 @@ class ModifiableClusterWrapper(Cluster, ModifiableMixIn):
         @yields: the data of this cluster as it needs to be written
         @ytype: L{bytes}
         """
+        self.read_infobyte_if_needed()
         yield self.generate_infobyte()
         compressor = self._get_compressor()
         for chunk in self._iter_write_raw():

@@ -9,6 +9,7 @@ import unittest
 import logging
 
 from pyzim import Zim, exceptions, policy, constants, item, blob, cache, cluster
+from pyzim.compression import CompressionType
 
 from .base import TestBase
 
@@ -632,6 +633,22 @@ class ZimWriterTests(unittest.TestCase, TestBase):
             with self.assertRaises(FileExistsError):
                 with zimdir.open(mode="x") as zim:
                     pass
+            if self.has_zimcheck():
+                self.run_zimcheck(zimdir.get_full_path())
+
+    def test_X_uncompressed(self):
+        """
+        Populate a new ZIM file, testing that all entries in X namespace are uncompressed.
+        """
+        with self.open_temp_dir() as zimdir:
+            with zimdir.open(mode="w") as zim:
+                self.populate_zim(zim)
+            with zimdir.open(mode="r") as zim:
+                for entry in zim.iter_entries():
+                    if entry.namespace == "X":
+                        cluster = entry.get_cluster()
+                        self.assertEqual(cluster.compression, CompressionType.NONE)
+            # validate zimfile
             if self.has_zimcheck():
                 self.run_zimcheck(zimdir.get_full_path())
 
