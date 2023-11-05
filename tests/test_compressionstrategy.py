@@ -27,6 +27,8 @@ class BaseCompressionStrategyTests(unittest.TestCase, TestBase):
                 strategy.add_item(item)
             with self.assertRaises(NotImplementedError):
                 strategy.flush()
+            with self.assertRaises(NotImplementedError):
+                strategy.has_items()
 
 
 class CompressionStrategyTestBase(unittest.TestCase, TestBase):
@@ -95,10 +97,14 @@ class CompressionStrategyTestBase(unittest.TestCase, TestBase):
                 zim.write_cluster = mock.MagicMock(return_value=cluster_number)
                 # setup strategy and add an item and flush
                 strategy = self.get_strategy(zim)
+                # check that the strategy does not have any initial items
+                self.assertFalse(strategy.has_items())
                 size = 1024
                 url = "test/url"
                 item = self.get_item(size, url=url)
                 strategy.add_item(item)
+                # check that the strategy does have unwritten items
+                self.assertTrue(strategy.has_items())
                 strategy.flush()
                 # ensure mocks were called
                 cluster = zim.write_cluster.call_args[0][0]
@@ -108,6 +114,8 @@ class CompressionStrategyTestBase(unittest.TestCase, TestBase):
                 self.assertEqual(entry.url, url)
                 self.assertEqual(entry.cluster_number, cluster_number)
                 self.assertEqual(entry.blob_number, 0)
+                # check that the strategy does not have any items after flush
+                self.assertFalse(strategy.has_items())
 
 
 class SimpleCompressionStrategyTests(CompressionStrategyTestBase):

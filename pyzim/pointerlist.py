@@ -241,6 +241,7 @@ class SimplePointerList(ModifiableMixIn):
         """
         assert isinstance(i, int) and i >= 0
         del self._pointers[i]
+        self.mark_dirty()
 
     def iter_pointers(self, start=None, end=None):
         """

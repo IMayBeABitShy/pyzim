@@ -15,7 +15,7 @@ class CustomTranslator(PathReaderMixIn, ZimTranslator):
     This translator converts all titles of C entries to uppercase while
     keeping track of redirects seen and M entries.
 
-    M entries are removed.
+    M entries are removed (except the counter).
 
     @ivar seen_redirects: a list of tuples of (src, target) of encountered redirects
     @type seen_redirects: L{list} of L{tuple} of (L{str}, L{str})
@@ -63,7 +63,7 @@ class TranslatorTests(unittest.TestCase, TestBase):
             # get original data for comparision
             expected_seen_metadata = []
             expected_seen_redirects = []
-            expected_num_entries = 0
+            expected_num_entries = 1  # 1 for MCounter
             with zimdir.open(mode="r") as zim:
                 mainpage_path = zim.get_mainpage_entry().resolve().full_url
                 for entry in zim.iter_entries():
@@ -97,5 +97,6 @@ class TranslatorTests(unittest.TestCase, TestBase):
                     num_entries += 1
                     if entry.namespace == "C":
                         self.assertEqual(entry.title, entry.title.upper())
-                    self.assertNotEqual(entry.namespace, "M")
+                    if entry.url != "Counter":
+                        self.assertNotEqual(entry.namespace, "M")
             self.assertEqual(num_entries, expected_num_entries)

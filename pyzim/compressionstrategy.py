@@ -44,6 +44,15 @@ class BaseCompressionStrategy(object):
         """
         self.zim = zim
 
+    def has_items(self):
+        """
+        True if this compression strategy still has items to be written.
+
+        @return: whether there are some items that still need to be written
+        @rtype: L{bool}
+        """
+        raise NotImplementedError("Subclasses of BaseCompressionStrategy need to implement has_items()!")
+
     def add_item(self, item):
         """
         Handle the addition of an item (e.g. create entries, ...).
@@ -101,6 +110,9 @@ class SimpleCompressionStrategy(BaseCompressionStrategy):
         self.entries = []
         self._lock = threading.Lock()
         self._new_cluster()
+
+    def has_items(self):
+        return len(self.entries) > 0
 
     def _new_cluster(self):
         """
@@ -200,6 +212,12 @@ class MimetypeBasedCompressionStrategy(BaseCompressionStrategy):
         self.cs_kwargs = cs_kwargs
         self.mimetype2cs = {}
         self._lock = threading.Lock()
+
+    def has_items(self):
+        for cs in self.mimetype2cs.values():
+            if cs.has_items():
+                return True
+        return False
 
     def _get_cs(self, mimetype):
         """

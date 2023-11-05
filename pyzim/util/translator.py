@@ -193,6 +193,26 @@ class ZimTranslator(object):
         logger.info("Not copying item X{} because pyzim will create it.".format(item.url))
         return None
 
+    def handle_M(self, item):
+        """
+        Handle an item in the M namespace.
+
+        The M namespace contains metadata, including MCounter. As pyzim
+        generates some entries (like MCounter), adding these ZIMs to the
+        output ZIM may result in suboptimal or even wrong behavior. Thus,
+        the default method only adds items the current pyzim
+        implementation does not create on its own. The exact behavior is
+        expected to change, so you should implement your own method if
+        you want consistent behavior here.
+        """
+        disallowed_urls = [
+            "Counter",
+        ]
+        if item.url not in disallowed_urls:
+            return item
+        logger.info("Not copying item M{} because pyzim will create it.".format(item.url))
+        return None
+
     def finalize(self):
         """
         Called when the translation process is finished.

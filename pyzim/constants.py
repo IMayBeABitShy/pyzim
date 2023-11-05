@@ -51,6 +51,7 @@ ENDIAN = "<"
 URL_ENTRY_TITLE_INDEX = "Xlisting/titleOrdered/v0"
 URL_ARTICLE_TITLE_INDEX = "Xlisting/titleOrdered/v1"
 URL_MAINPAGE_REDIRECT = "WmainPage"
+URL_COUNTER = "MCounter"
 
 # mimetypes
 MIMETYPE_ZIMLISTING = "application/octet-stream+zimlisting"

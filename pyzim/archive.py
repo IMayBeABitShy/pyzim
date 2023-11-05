@@ -24,6 +24,8 @@ from .modifiable import ModifiableMixIn
 from .spaceallocator import SpaceAllocator
 from .operationbuffer import OperationBuffer
 from .item import Item
+from .processor import BaseProcessor
+from .counter import Counter
 
 
 # instantiate a logger
@@ -83,6 +85,10 @@ class Zim(ModifiableMixIn):
     @type _cluster_num: L{int}
     @ivar _operationbuffer: buffer for not-yet-completable operations
     @type _operationbuffer: L{pyzim.operationbuffer.OperationBuffer} or L{None}
+    @ivar _processors: list of processors to that have been installed on this zim
+    @type _processors: L{list} of L{pyzim.processor.BaseProcessor}
+    @ivar _counter: the counter counting mimetype occurences
+    @type _counter: L{pyzim.counter.Counter}
     """
     def __init__(self, f, offset=0, mode="r", policy=DEFAULT_POLICY):
         """
@@ -119,6 +125,7 @@ class Zim(ModifiableMixIn):
         self.policy = policy
         self._closed = False
         self.filelock = threading.Lock()
+        self._processors = []
 
         self._init_caches()
 
@@ -170,6 +177,9 @@ class Zim(ModifiableMixIn):
         if new_file:
             # finalize init for new archive, which requires compression strategy to be initialized
             self._init_new()
+        self._counter = Counter.load_from_archive(self, how=self.policy.counter)
+        if self._counter is not None:
+            self.install_processor(self._counter)
         self.after_flush_or_read()
         logger.info("ZIM archive ready.")
 
@@ -492,12 +502,16 @@ class Zim(ModifiableMixIn):
         Close the ZIM file. Can be safely called multiple times.
         """
         logger.info("Closing ZIM archive...")
+        for processor in self._processors:
+            processor.before_close()
         if self.dirty:
             # we need to flush changes
             self.flush()
         logger.debug("Closing underlying file object...")
         self._f.close()
         self._closed = True
+        for processor in self._processors:
+            processor.after_close()
         logger.info("Archive closed.")
 
     @property
@@ -521,6 +535,10 @@ class Zim(ModifiableMixIn):
         self.ensure_mutable()
 
         logger.info("Flushing archive...")
+
+        # call processors
+        for processor in self._processors:
+            processor.before_flush()
 
         # first, we need to clear all caches, so that cached clusters
         # and entries get written and any other changed (e.g. url) cause
@@ -550,6 +568,10 @@ class Zim(ModifiableMixIn):
         # TODO: this would be preferable after the title pointer lists have been written.
         logger.debug("Applying buffered operations depending on entries...")
         self._operation_buffer.finalize_entry_dependent_operations()
+
+        logger.debug("Flushing processors...")
+        for processor in self._processors:
+            processor.after_content_flush()
 
         # we need to do the following for each component of this ZIM excluding the header:
         # - check if it is dirty
@@ -592,14 +614,6 @@ class Zim(ModifiableMixIn):
             entry_title_blob_offset = entry_title_cluster.get_offset(entry_title_pointer_entry.blob_number)
             self.header.title_pointer_position = entry_title_cluster_offset + 1 + entry_title_blob_offset
             self._entry_title_pointer_list.after_flush_or_read()
-
-        # At this point, we've added all items already.
-        # We need to flush our compression strategy, so that all
-        # entries will be added and clusters written (and thus also
-        # update the mimetypelist and cluster pointer list)
-        # TODO: we need to flush once before the title lists too
-        logger.debug("Flushing compression strategy again...")
-        # self.compression_strategy.flush()
 
         # mimetypelist
         if self.mimetypelist.dirty:
@@ -679,6 +693,9 @@ class Zim(ModifiableMixIn):
                 f.seek(self.header.checksum_position + 16)
                 f.truncate()
         self.after_flush_or_read()
+        # call processors
+        for processor in self._processors:
+            processor.after_flush()
         logger.debug("Archive flushed.")
 
     def __enter__(self):
@@ -762,6 +779,21 @@ class Zim(ModifiableMixIn):
         self._cluster_num += 1
         return cluster_num
 
+    @property
+    def counter(self):
+        """
+        Return the counter used for counting mimetype occurences.
+
+        If not counter is available, return L{None} instead.
+
+        @return: the mimetype counter
+        @rtype: L{pyzim.counter.Counter} or L{None}
+        """
+        # we do not directly expose self._counter because setting the counter
+        # also requires the handler to be installed. The read-only property
+        # prevents the user from setting the counter directly
+        return self._counter
+
     # ============= ModifiableMixIn methods =========
 
     def get_disk_size(self):
@@ -790,6 +822,10 @@ class Zim(ModifiableMixIn):
         @rtype: L{pyzim.entry.BaseEntry}
         """
         assert isinstance(location, int) and location >= 0
+        # call processors
+        for processor in self._processors:
+            processor.before_entry_get(location=location, allow_cache_replacement=allow_cache_replacement)
+        # get entry
         full_location = self._base_offset + location
         logger.log(constants.LOG_LEVEL_READ, "Getting entry at {} (full offset {})".format(location, full_location))
         if self.entry_cache.has(full_location):
@@ -801,6 +837,13 @@ class Zim(ModifiableMixIn):
             self.entry_cache.push(full_location, entry, allow_replacement=allow_cache_replacement)
         if bind:
             entry.bind(self)
+        # call processors
+        for processor in self._processors:
+            entry = processor.after_entry_get(
+                location=location,
+                allow_cache_replacement=allow_cache_replacement,
+                entry=entry,
+            )
         return entry
 
     def get_entry_by_url(self, namespace, url):
@@ -905,7 +948,7 @@ class Zim(ModifiableMixIn):
         entry = self.get_entry_at(entry_location)
         return entry
 
-    def _update_url_pointers(self, start, diff, edit_etpl=True, edit_atpl=True, update_redirects=True):
+    def _update_url_pointers(self, start, diff, edit_etpl=True, edit_atpl=True, update_redirects=True, skip=()):
         """
         Update references to URL pointers.
 
@@ -924,11 +967,15 @@ class Zim(ModifiableMixIn):
         @type edit_atpl: L{bool}
         @param update_redirects: if nonzero (default), update redirects
         @type update_redirects: L{bool}
+        @param skip: list or tuple of full urls not to update recursively
+        @type skip: L{list} or L{tuple} of L{str}
         """
         assert isinstance(start, int) and start >= 0
         assert isinstance(diff, int)
         assert isinstance(edit_etpl, bool)
         assert isinstance(edit_atpl, bool)
+        assert isinstance(skip, (list, tuple))
+        logger.log(constants.LOG_LEVEL_WRITE, "Updating pointers (start={}, diff={})".format(start, diff))
         # update entry title list
         if edit_etpl:
             self._entry_title_pointer_list.mass_update(diff, start=start)
@@ -938,9 +985,10 @@ class Zim(ModifiableMixIn):
         # update redirects
         if update_redirects:
             for entry in self.iter_entries_by_url():
-                if entry.is_redirect:
+                if entry.is_redirect and (entry.full_url not in skip):
                     if entry.redirect_index >= start:
                         entry.redirect_index += diff
+                        assert entry.redirect_index != (self._url_pointer_list.get(entry.full_url))
                         self.write_entry(entry)
         # update header
         if self.header.main_page is not None:
@@ -1039,6 +1087,10 @@ class Zim(ModifiableMixIn):
 
         logger.log(constants.LOG_LEVEL_WRITE, "Removing entry at '{}'...".format(full_url))
 
+        # call processors
+        for processor in self._processors:
+            processor.before_entry_remove(full_url=full_url, blob=blob)
+
         # find entry
         # find offset and index in url pointer list
         # it is slightly more efficient to call these methods individually
@@ -1067,6 +1119,11 @@ class Zim(ModifiableMixIn):
         redirects_to_remove = []
         for redirect in self.iter_entries():
             if redirect.is_redirect and redirect.redirect_index == url_index:
+                if self.get_entry_by_url_index(redirect.redirect_index).full_url == redirect.full_url:
+                    # due to the pointer modifications, it can happen that a redirect
+                    # temporarily points to itself
+                    # in this case, we should not remove it
+                    continue
                 redirects_to_remove.append(redirect.full_url)
         # remove article title
         # explicitly check for namespace, because entry_at_url_is_article
@@ -1079,7 +1136,9 @@ class Zim(ModifiableMixIn):
         entry_title_index = self._entry_title_pointer_list.get_by_pointer(url_index)
         self._entry_title_pointer_list.remove_by_index(entry_title_index)
         # remove from url list
+        logger.debug("Removing index {} from url pointer list (pointer: {})".format(url_index, self._url_pointer_list._pointers[url_index]))  # DEBUG
         self._url_pointer_list.remove_by_index(url_index)
+        logger.debug("after removal: {}".format(self._url_pointer_list._pointers))
         # update entry cache
         self.entry_cache.remove(self._base_offset + offset)
         # update header
@@ -1093,6 +1152,15 @@ class Zim(ModifiableMixIn):
         for r_url in redirects_to_remove:
             logger.log(constants.LOG_LEVEL_WRITE, "Removing redirect for URL {} as it points to removed entry {}".format(r_url, entry.full_url))
             self.remove_entry_by_full_url(r_url)
+
+        # call processors
+        for processor in self._processors:
+            processor.after_entry_remove(
+                full_url=full_url,
+                blob=blob,
+                entry=entry,
+                is_article=is_article,
+            )
 
     def entry_at_url_is_article(self, full_url):
         """
@@ -1219,7 +1287,15 @@ class Zim(ModifiableMixIn):
 
         logger.log(constants.LOG_LEVEL_WRITE, "Writing entry for url: {}".format(entry.full_url))
 
-        # Approach:
+        # call processors
+        for processor in self._processors:
+            entry = processor.before_entry_write(
+                entry=entry,
+                add_to_title_pointer_list=add_to_title_pointer_list,
+                update_redirects=update_redirects,
+            )
+
+        # Approach for writing an entry:
         # We have two main cases: the entry is completely new or we are updating an existing entry
         # the update itself must consider the following potential changes:
         #  - change of entry size
@@ -1249,21 +1325,23 @@ class Zim(ModifiableMixIn):
             old_url_index = None
             old_offset = None
             disk_size_changed = True
-            new_entry = True
+            is_new_entry = True
+            old_entry = None
         else:
             # entry was already part of the archive
             old_offset = self._url_pointer_list.get_by_index(old_url_index)
+            old_entry = self.get_entry_at(old_offset, allow_cache_replacement=False)
             # PROBLEM: if we override an entry with a new entry with the
             # same URL but a different title, the calculated old disk
             # size. This is a temp fix.
-            old_size = self.get_entry_at(old_offset, allow_cache_replacement=False).get_unmodified_disk_size()
+            old_size = old_entry.get_unmodified_disk_size()
             # old_size = entry.get_unmodified_disk_size()
             disk_size_changed = (old_size != new_size)
-            new_entry = False
-        url_changed = (old_url != entry.full_url) or new_entry
+            is_new_entry = False
+        url_changed = (old_url != entry.full_url) or is_new_entry
 
         # find title pointers
-        if not new_entry:
+        if not is_new_entry:
             try:
                 old_entry_title_index = self._entry_title_pointer_list.get_by_pointer(old_url_index)
             except KeyError:
@@ -1291,14 +1369,14 @@ class Zim(ModifiableMixIn):
 
         # find redirects that reference this entry
         redirects_to_update = []  # list of redirects pointing to the old url index
-        if update_redirects and url_changed and (not new_entry):
+        if update_redirects and url_changed and (not is_new_entry):
             for redirect in self.iter_entries():
                 if redirect.is_redirect and redirect.redirect_index == old_url_index:
                     redirects_to_update.append(redirect.full_url)
 
         # ================= Stage 2: write entry =======================
         # mark previous space as free
-        if disk_size_changed and (not new_entry):
+        if disk_size_changed and (not is_new_entry):
             self.spaceallocator.mark_free(old_offset, old_size)
         if disk_size_changed:
             # get a new location to write entry to
@@ -1317,20 +1395,30 @@ class Zim(ModifiableMixIn):
 
         # ================= Stage 3: perform changes ===================
         # delete from title lists
-        if not new_entry:
+        if not is_new_entry:
             if old_entry_title_index is not None:
                 # see definition in stage 1
                 self._entry_title_pointer_list.remove_by_index(old_entry_title_index)
             if old_article_title_index is not None:
                 self._article_title_pointer_list.remove_by_index(old_article_title_index)
         # delete old URL pointer
-        if (url_changed or disk_size_changed) and (not new_entry):
+        if (url_changed or disk_size_changed) and (not is_new_entry):
             self._url_pointer_list.remove_by_index(old_url_index)
             self._update_url_pointers(start=old_url_index, diff=-1)
-        # insert new URL pointer
+        # insert new URL pointer, which may cause this entry itself to be updated
         if url_changed or disk_size_changed:
             new_url_index = self._url_pointer_list.add(entry.full_url, new_offset)
-            self._update_url_pointers(start=new_url_index, diff=1, update_redirects=True)
+            self._update_url_pointers(start=new_url_index, diff=1, update_redirects=True, skip=(entry.full_url, ))
+            need_entry_update = (entry.is_redirect and entry.redirect_index >= new_url_index)
+            if need_entry_update:
+                # the redirect pointer of the redirect is outdated, write again
+                entry.redirect_index += 1
+                with self.acquire_file() as f:
+                    f.seek(self._base_offset + new_offset)
+                    f.write(entry.to_bytes())
+                entry.after_flush_or_read()
+                self.entry_cache.push(self._base_offset + new_offset, entry)
+            assert (not entry.is_redirect) or (entry.redirect_index != new_url_index)
         else:
             # using previous URL
             new_url_index = old_url_index
@@ -1347,6 +1435,20 @@ class Zim(ModifiableMixIn):
                 redirect = self.get_entry_by_full_url(redirect_full_url)
                 redirect.redirect_index = new_url_index
                 self.write_entry(redirect, update_redirects=False)
+
+        # call processors
+        for processor in self._processors:
+            processor.after_entry_write(
+                entry=entry,
+                old_entry=old_entry,
+                old_offset=old_offset,
+                new_offset=new_offset,
+                is_new_entry=is_new_entry,
+                add_to_title_pointer_list=add_to_title_pointer_list,
+                update_redirects=update_redirects,
+            )
+        if entry.is_redirect:
+            logger.debug("{} ({} / {})".format(entry.full_url, entry.redirect_index, self.get_entry_by_url_index(entry.redirect_index).full_url))  # DEBUG
 
     def add_redirect(self, source, target, title=None):
         """
@@ -1438,6 +1540,10 @@ class Zim(ModifiableMixIn):
             parameters=[],
         )
         entry.bind(self)
+        # call processors
+        for processor in self._processors:
+            processor.on_add_redirect(entry=entry)
+        # write entry
         self.write_entry(entry)
 
     # ========== mimetype interface ==========
@@ -1498,11 +1604,15 @@ class Zim(ModifiableMixIn):
         @rtype: L{pyzim.cluster.Cluster}
         """
         # not offering bind as a parameter as that would make this function useless
+        # call processors
+        for processor in self._processors:
+            processor.before_cluster_get(location=location)
+
         full_location = self._base_offset + location
         logger.log(constants.LOG_LEVEL_READ, "Loading cluster at {} (full offset {})...".format(location, full_location))
         if self.cluster_cache.has(full_location):
             logger.log(constants.LOG_LEVEL_READ, "Cluster found in cache,")
-            return self.cluster_cache.get(full_location)
+            cluster = self.cluster_cache.get(full_location)
         else:
             cluster_class = self.policy.cluster_class
             cluster = cluster_class(zim=self, offset=full_location)
@@ -1511,7 +1621,10 @@ class Zim(ModifiableMixIn):
                 logger.log(constants.LOG_LEVEL_READ, "Wrapping cluster to allow modifications...")
                 cluster = ModifiableClusterWrapper(cluster)
             self.cluster_cache.push(full_location, cluster)
-            return cluster
+        # call processors
+        for processor in self._processors:
+            cluster = processor.after_cluster_get(cluster=cluster)
+        return cluster
 
     def get_cluster_by_index(self, i):
         """
@@ -1633,6 +1746,10 @@ class Zim(ModifiableMixIn):
         if cluster.zim is not self:
             raise BindingError("Cluster {} is not bound to this archive!".format(repr(cluster)))
 
+        # call processors
+        for processor in self._processors:
+            cluster = processor.before_cluster_write(cluster=cluster)
+
         # first, figure out if size has changed
         is_new_cluster = (cluster.offset is None)
         old_size = cluster.get_unmodified_disk_size()
@@ -1676,6 +1793,14 @@ class Zim(ModifiableMixIn):
         # finally, mark previously used space as free
         if old_offset is not None:
             self.spaceallocator.mark_free(old_offset, old_size)
+        # call processors
+        for processor in self._processors:
+            processor.after_cluster_write(
+                cluster=cluster,
+                old_offset=old_offset,
+                new_offset=new_offset,
+                cluster_number=cluster_num,
+            )
         # return the cluster number
         return cluster_num
 
@@ -1906,6 +2031,23 @@ class Zim(ModifiableMixIn):
         with self.acquire_file() as f:
             f.seek(self.header.checksum_position)
             f.write(new_checksum)
+
+    # ============ other interfaces ===============
+
+    def install_processor(self, processor):
+        """
+        Install a processor on this archive.
+
+        See L{pyzim.processor} for more details.
+
+        @param processor: processor to install
+        @type processor: L{bool}
+        @raise TypeError: on type error
+        """
+        if not isinstance(processor, BaseProcessor):
+            raise TypeError("Expected a pyzim.processor.BaseProcessor, got {} instead!".format(type(processor)))
+        processor.on_install(self)
+        self._processors.append(processor)
 
 
 # Fix for pydoctor, which would otherwise hide all names exported in __init__.__all__

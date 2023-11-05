@@ -89,6 +89,13 @@ class BlobNotFound(BaseZimException):
     pass
 
 
+class NoCounter(BaseZimException):
+    """
+    Exception raised when the counter could not be loaded.
+    """
+    pass
+
+
 class ZimWriteException(BaseZimException):
     """
     Baseclass for exception related to ZIM creation/modification.

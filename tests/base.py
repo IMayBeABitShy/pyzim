@@ -5,8 +5,10 @@ import contextlib
 import os
 import shutil
 import tempfile
+import subprocess
 
 from pyzim.archive import Zim
+from pyzim import blob, item
 
 
 class TempZimDir(object):
@@ -69,7 +71,24 @@ class TempZimDir(object):
 class TestBase(object):
     """
     A mix-in class for pyzim tests, providing shared functionality.
+
+    @cvar TEST_ZIM_META: metadata for standard test zim file
+    @type TEST_ZIM_META: L{dict} of L{str} -> L{str}
+    @cvar NUM_ENTRIES: expected number of entries in the standard test ZIM file
+    @type NUM_ENTRIES: L{int}
     """
+
+    TEST_ZIM_META = {
+            "Name": "testzim",
+            "Title": "Test Zim",
+            "Creator": "pyzim",
+            "Publisher": "pyzim",
+            "Date": "2023-09-11",
+            "Description": "A ZIM file for testing",
+            "Language": "Eng",
+            "Illustration_48x48@1": "some placeholder data",
+        }
+    NUM_ENTRIES = 5 + 2 + 1 + len(TEST_ZIM_META) + 1  # 5 items, 2 title lists, 1 redirect, 1 counter
 
     def get_zts_small_path(self):
         """
@@ -124,3 +143,120 @@ class TestBase(object):
         """
         with tempfile.TemporaryDirectory() as tempdir:
             yield TempZimDir(path=tempdir)
+
+    def has_zimcheck(self):
+        """
+        Check if the 'zimcheck' tool is installed.
+
+        @return: True if zimcheck is installed
+        @rtype: L{bool}
+        """
+        try:
+            subprocess.check_call(["zimcheck", "--version"])
+        except subprocess.CalledProcessError:
+            # zimcheck exited with error code 0
+            return False
+        else:
+            return True
+
+    def run_zimcheck(self, path):
+        """
+        Run 'zimcheck' on the specified zim.
+
+        @param path: path of zim file to run zimcheck on
+        @type path: L{str}
+        """
+        subprocess.check_call(["zimcheck", "--all", "--details", path], stderr=subprocess.STDOUT)
+
+    def add_item(self, zim, namespace, url, title, mimetype, content, is_article=False):
+        """
+        Helper function for quickly adding an entry to the zim archive.
+
+        @param zim: zim archive to add item to
+        @type zim: L{pyzim.archive.Zim}
+        @param namespace: namespace of entry
+        @type namespace: L{str}
+        @param url: url of entry
+        @type url: L{str} or L{bytes}
+        @param title: title of entry
+        @type title: L{str}
+        @param mimetype: mimetype of entry
+        @type mimetype: L{str}
+        @param content: content of the blob
+        @type content: L{str} or L{bytes}
+        @param is_article: whether the item should be an article or not
+        @type is_article: L{bool}
+        """
+        assert isinstance(zim, Zim)
+        assert isinstance(namespace, str)
+        assert isinstance(url, str)
+        assert isinstance(title, str)
+        assert isinstance(mimetype, str)
+        assert isinstance(content, (str, bytes))
+
+        content_blob = blob.InMemoryBlobSource(content)
+        new_item = item.Item(
+            namespace=namespace,
+            url=url,
+            mimetype=mimetype,
+            title=title,
+            blob_source=content_blob,
+            is_article=is_article,
+        )
+        zim.add_item(new_item)
+
+    def populate_zim(self, zim):
+        """
+        Populate an ZIM archive with some default content.
+
+        @param zim: zim archive to populate
+        @type zim: L{pyzim.archive.Zim}
+        """
+        self.add_item(
+            zim,
+            namespace="C",
+            url="home.txt",
+            title="Welcome!",
+            mimetype="text/plain",
+            content="This is the mainpage.",
+            is_article=True,
+        )
+        self.add_item(
+            zim,
+            namespace="C",
+            url="/sub/directory.txt",
+            title="Subdirectory",
+            mimetype="text/plain",
+            content="subdirectory_content",
+            is_article=True,
+        )
+        self.add_item(
+            zim,
+            namespace="C",
+            url="markdown.md",
+            title="Markdown",
+            mimetype="text/markdown",
+            content="#Markdown Test",
+            is_article=True,
+        )
+        self.add_item(
+            zim,
+            namespace="C",
+            url="hidden.txt",
+            title="Hidden",
+            mimetype="text/plain",
+            content="hidden content",
+            is_article=False,
+        )
+        self.add_item(
+            zim,
+            namespace="T",
+            url="namespace.txt",
+            title="Namespace",
+            mimetype="text/plain",
+            content="Namespace test",
+            is_article=False,
+        )
+        zim.set_mainpage_url("home.txt")
+        for k, v in self.TEST_ZIM_META.items():
+            zim.set_metadata(k, v)

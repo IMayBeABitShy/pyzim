@@ -57,6 +57,8 @@ class Policy(object):
     @type truncate: L{bool}
     @ivar reserve_mimetype_space: number of bytes after the header to reserve for the mimetypelist, L{None} to disable. Will likely be removed in the future.
     @type reserve_mimetype_space: L{int} or L{None}
+    @ivar counter: how the counter should be loaded/initialized, see L{pyzim.counter.Counter.load_from_archive}
+    @type counter: L{str}
     """
     def __init__(
         self,
@@ -73,6 +75,7 @@ class Policy(object):
         autoflush=True,
         truncate=False,
         reserve_mimetype_space=2048,
+        counter="load_or_reinit",
     ):
         """
         The default constructor.
@@ -103,6 +106,8 @@ class Policy(object):
         @type truncate: L{bool}
         @param reserve_mimetype_space: number of bytes after the header to reserve for the mimetypelist, L{None} to disable. Will likely be removed in the future.
         @type reserve_mimetype_space: L{int} or L{None}
+        @param counter: how the counter should be loaded/initialized, see L{pyzim.counter.Counter.load_from_archive}
+        @type counter: L{str}
         """
         assert isinstance(compression_options, dict)
         if cluster_class is None:
@@ -149,6 +154,7 @@ class Policy(object):
         assert isinstance(uncompressed_compression_strategy_kwargs, dict)
         assert "zim" not in compression_strategy_kwargs
         assert (reserve_mimetype_space is None) or (isinstance(reserve_mimetype_space, int) and reserve_mimetype_space > 2)
+        assert isinstance(counter, str) and (counter in ("load", "ignore", "reinit", "load_or_reinit"))
 
         self.compression_options = compression_options
         self.cluster_class = cluster_class
@@ -163,6 +169,7 @@ class Policy(object):
         self.autoflush = autoflush
         self.truncate = truncate
         self.reserve_mimetype_space = reserve_mimetype_space
+        self.counter = counter
 
 
 DEFAULT_POLICY = Policy()
