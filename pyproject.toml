@@ -1,6 +1,8 @@
 # pyproject.toml for pyzim
 
 
+# ============== PACKAGE CONFIG =============
+
 # build system configuration
 [build-system]
 requires = ["hatchling"]
@@ -48,3 +50,85 @@ packages = ["pyzim"]
 [project.urls]
 "Homepage" = "https://github.com/imaybeabitshy/pyzim"
 "Bug Tracker" = "https://github.com/imaybeabitshy/pyzim/issues"
+
+
+# ============== TOX/TESTING CONFIG =============
+
+# tox core configuration
+[tool.tox]
+requires = ["tox>=4.22"]
+env_list = [
+    "pullzimtests",
+    "static",
+    "static_tests",
+    "py311",
+    "docs",
+#    "testdocs",
+]
+
+# unittest environment
+[tool.tox.env_run_base]
+description = "Run unittests"
+#depends = [
+#    "pullzimtests",
+# ]
+deps = [
+    "pytest",
+    "pytest-cov",
+    "pytest-timeout",
+    ".[compression]",
+]
+commands = [
+    ["pytest", "--showlocals", "--log-level=debug", "--cov=pyzim", "--cov-branch", "--cov-report", "html:html/coverage", "--cov-report", "term", "--timeout", "5", "--verbose", "tests/", ],
+]
+
+[tool.tox.env.pullzimtests]
+description = "Download the ZIM testing suite if necessary"
+allowlist_externals = [
+    "bash",
+]
+commands = [
+    ["bash", "tests/pull_zts.sh", ],
+]
+
+[tool.tox.env.static]
+description = "Run static code analysis"
+deps = [
+    "flake8",
+]
+commands = [
+    ["flake8", "--max-line-length", "99999", "pyzim", ],
+]
+
+[tool.tox.env.static_tests]
+description = "Run static code analysis on test code"
+deps = [
+    "flake8",
+]
+commands = [
+    ["flake8", "--max-line-length", "99999", "tests", ],
+]
+
+[tool.tox.env.docs]
+description = "Generate documentation"
+# basepython = "python3.9"
+deps = [
+    "pydoctor",
+]
+commands = [
+    ["pydoctor", "--project-name=PyZim", "--project-version=0.0.1", "--project-url=https://github.com/IMayBeABitShy/pyzim", "--intersphinx", "https://docs.python.org/3/objects.inv", "--intersphinx", "https://pyzstd.readthedocs.io/en/latest/objects.inv", "--warnings-as-errors", "--make-html", "--html-output", "html/apidocs", "pyzim", ],
+]
+
+[tool.tox.env.testdocs]
+depends = [
+    "docs",
+]
+description = "Generate test documentation"
+# basepython = "python3.9"
+deps = [
+    "pydoctor",
+]
+commands = [
+    ["pydoctor", "--project-name=PyZim Tests", "--project-version=0.0.1", "--project-url=https://github.com/IMayBeABitShy/pyzim", "--intersphinx", "https://docs.python.org/3/objects.inv", "--intersphinx", "https://pyzstd.readthedocs.io/en/latest/objects.inv", "--intersphinx", "file://html/apidocs/objects.inv", "--warnings-as-errors", "--make-html", "--html-output", "html/testdocs", "tests", ],
+]
+
