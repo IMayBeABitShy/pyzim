@@ -20,6 +20,8 @@ choosen compression level and type for a cluster.
 @type ALL_POLICIES: L{list} of L{Policy}
 """
 from . import constants
+from .pointerlist import SimplePointerList, OrderedPointerList, TitlePointerList
+from .pointerlist import OnDiskSimplePointerList, OnDiskOrderedPointerList, OnDiskTitlePointerList
 from .cluster import Cluster, OffsetRememberingCluster, InMemoryCluster
 from .compression import CompressionTarget, CompressionType
 from .compressionstrategy import BaseCompressionStrategy, SimpleCompressionStrategy
@@ -33,8 +35,14 @@ class Policy(object):
 
     @ivar compression_options: options for to pass to L{pyzim.compression.BaseCompressionInterface}
     @type compression_options: L{dict}
-    @ivar cluster_class: cluster implemenetation to use
+    @ivar cluster_class: cluster implementation to use
     @type cluster_class: a class (L{pyzim.cluster.Cluster} or a subclass)
+    @ivar simple_pointer_list_class: simple pointer list implementation to use
+    @type simple_pointer_list_class: a class (L{pyzim.pointerlist.SimplePointerList} or a subclass)
+    @ivar ordered_pointer_list_class: ordered pointer list implementation to use
+    @type ordered_pointer_list_class: a class (L{pyzim.pointerlist.OrderedPointerList} or a subclass)
+    @ivar title_pointer_list_class: title pointer list implementation to use
+    @type title_pointer_list_class: a class (L{pyzim.pointerlist.TitlePointerList} or a subclass)
     @ivar entry_cache_class: class to use for caching entries
     @type entry_cache_class: a subclass of L{pyzim.cache.BaseCache}
     @ivar entry_cache_kwargs: keyword arguments to pass to the entry_cache_class
@@ -64,6 +72,9 @@ class Policy(object):
         self,
         compression_options={},
         cluster_class=None,
+        simple_pointer_list_class=None,
+        ordered_pointer_list_class=None,
+        title_pointer_list_class=None,
         entry_cache_class=None,
         entry_cache_kwargs=None,
         cluster_cache_class=None,
@@ -84,6 +95,12 @@ class Policy(object):
         @type compression_options: L{dict}
         @param cluster_class: cluster implemenetation to use
         @type cluster_class: a class (L{pyzim.cluster.Cluster} or a subclass) or L{None}
+        @ivar simple_pointer_list_class: simple pointer list implementation to use
+        @type simple_pointer_list_class: a class (L{pyzim.pointerlist.SimplePointerList} or a subclass)  or L{None}
+        @ivar ordered_pointer_list_class: ordered pointer list implementation to use
+        @type ordered_pointer_list_class: a class (L{pyzim.pointerlist.OrderedPointerList} or a subclass) or L{None}
+        @ivar title_pointer_list_class: title pointer list implementation to use
+        @type title_pointer_list_class: a class (L{pyzim.pointerlist.TitlePointerList} or a subclass) or L{None}
         @param entry_cache_class: class to use for caching entries
         @type entry_cache_class: a subclass of L{pyzim.cache.BaseCache} or L{None}
         @param entry_cache_kwargs: keyword arguments to pass to the entry_cache_class
@@ -113,6 +130,15 @@ class Policy(object):
         if cluster_class is None:
             cluster_class = OffsetRememberingCluster
         assert issubclass(cluster_class, Cluster)
+        if simple_pointer_list_class is None:
+            simple_pointer_list_class = SimplePointerList
+        assert issubclass(simple_pointer_list_class, SimplePointerList)
+        if ordered_pointer_list_class is None:
+            ordered_pointer_list_class = OrderedPointerList
+        assert issubclass(ordered_pointer_list_class, OrderedPointerList)
+        if title_pointer_list_class is None:
+            title_pointer_list_class = TitlePointerList
+        assert issubclass(title_pointer_list_class, TitlePointerList)
         if entry_cache_class is None:
             entry_cache_class = NoOpCache
             if entry_cache_kwargs is None:
@@ -126,7 +152,7 @@ class Policy(object):
             if cluster_cache_kwargs is None:
                 cluster_cache_kwargs = {"max_size": 2}
         elif cluster_cache_kwargs is None:
-            cluster_cache_kwargs = {"max_size": 2}
+            cluster_cache_kwargs = {}
         assert issubclass(cluster_cache_class, BaseCache)
         assert isinstance(cluster_cache_kwargs, dict)
         if compression_strategy_class is None:
@@ -158,6 +184,9 @@ class Policy(object):
 
         self.compression_options = compression_options
         self.cluster_class = cluster_class
+        self.simple_pointer_list_class = simple_pointer_list_class
+        self.ordered_pointer_list_class = ordered_pointer_list_class
+        self.title_pointer_list_class = title_pointer_list_class
         self.entry_cache_class = entry_cache_class
         self.entry_cache_kwargs = entry_cache_kwargs
         self.cluster_cache_class = cluster_cache_class
@@ -178,6 +207,9 @@ LOW_RAM_DECOMP_POLICY = Policy(
         "general.target": CompressionTarget.LOWRAM_DECOMPRESSION,
     },
     cluster_class=Cluster,
+    simple_pointer_list_class=OnDiskSimplePointerList,
+    ordered_pointer_list_class=OnDiskOrderedPointerList,
+    title_pointer_list_class=OnDiskTitlePointerList,
     cluster_cache_class=NoOpCache,
     entry_cache_class=NoOpCache,
 )

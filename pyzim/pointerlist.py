@@ -8,13 +8,15 @@ from . import constants, exceptions
 from .modifiable import ModifiableMixIn
 
 
+# ============ HELPER FUNCTIONS =============
+
 def binarysearch(to_search, element, key, start=0, end=None):
     """
     Adapted version of the binarysearch algorithm.
     See L{bisect.bisect_left} for general behavior notes.
 
-    @param to_search: list/tuple to search. Must be sorted.
-    @type to_search: L{list} or L{tuple}
+    @param to_search: a sorted, indexable object to search
+    @type to_search: a sorted, indexable object
     @param element: element to find
     @type element: any
     @param key: key function to extract comparison key. Not applied to element.
@@ -26,7 +28,7 @@ def binarysearch(to_search, element, key, start=0, end=None):
     @return: the first index for which all subsequent elements are >= the specified element
     @rtype: L{int}
     """
-    assert isinstance(to_search, (list, tuple))
+    assert hasattr(to_search, "__getitem__")
     assert isinstance(start, int) and start >= 0 and start <= len(to_search)
     assert (isinstance(end, int) and end >= 0 and end <= len(end)) or (end is None)
     assert (end is None) or (start <= end)
@@ -43,6 +45,9 @@ def binarysearch(to_search, element, key, start=0, end=None):
         else:
             end = mid
     return start
+
+
+# ============ BASE POINTER LISTS =============
 
 
 class SimplePointerList(ModifiableMixIn):
@@ -76,6 +81,16 @@ class SimplePointerList(ModifiableMixIn):
 
         # ensure we know the current object size before modifications later
         self.after_flush_or_read()
+
+    @classmethod
+    def new(cls):
+        """
+        Instantiate a new, empty pointerlist.
+
+        @return: a new, empty pointerlist
+        @rtype: L{SimplePointerList}
+        """
+        return cls([])
 
     @classmethod
     def from_bytes(cls, s):
@@ -126,6 +141,45 @@ class SimplePointerList(ModifiableMixIn):
         pointer_list = list(struct.unpack(format, data))
         return cls(pointer_list)
 
+    @classmethod
+    def from_zim_file(cls, zim, n, seek=None):
+        """
+        Load a pointer list from a ZIM file at the specified offset.
+
+        This usually acquires the file lock and calls L{SimplePointerList.from_file},
+        but subclasses may behave differently.
+
+        @param zim: ZIM file to read from
+        @type zim: L{pyzim.archive.Zim}
+        @param n: number of entries in the pointer list.
+        @type n: L{int}
+        @param seek: if specified, seek this position of the file before reading
+        @type seek: L{int} or L{None}
+        @return: the pointerlist read from the file
+        @rtype: L{pyzim.pointerlist.SimplePointerList}
+        """
+        assert isinstance(n, int) and (n >= 0)
+        assert isinstance(seek, int) or (seek is None)
+        with zim.acquire_file() as f:
+            return cls.from_file(f=f, n=n, seek=seek)
+
+    @classmethod
+    def from_zim_entry(cls, zim, full_url):
+        """
+        Load a pointer list from an entry inside a ZIM archive.
+
+        NOTE: it is not possible to validate that the string contains the whole pointer list.
+
+        @param zim: ZIM file to read from
+        @type zim: L{pyzim.archive.Zim}
+        @param full_url: full url of entry to read pointerlist from
+        @type full_url: L{str}
+        @return: the pointerlist parsed from the bytes
+        @rtype: L{pyzim.pointerlist.SimplePointerList}
+        """
+        entry = zim.get_entry_by_full_url(full_url).resolve()
+        return cls.from_bytes(entry.read())
+
     def to_bytes(self):
         """
         Dump this pointer list into a bytestring and return it.
@@ -144,6 +198,20 @@ class SimplePointerList(ModifiableMixIn):
         @rtype: L{int}
         """
         return len(self._pointers)
+
+    def __getitem__(self, i):
+        """
+        Get the pointer at the specified index.
+
+        This is basically just a wrapper around L{SimplePointerList.get_by_index}.
+
+        @param i: index of pointer to get
+        @type i: L{int}
+        @return: the poiner with the specified index
+        @rtype: L{int}
+        @raises IndexError: when the index is out of bounds.
+        """
+        return self.get_by_index(i)
 
     def get_by_index(self, i):
         """
@@ -169,7 +237,8 @@ class SimplePointerList(ModifiableMixIn):
         @raises KeyError: if pointer not found in archive
         """
         assert isinstance(pointer, int)
-        for i, listpointer in enumerate(self._pointers):
+        for i in range(len(self)):
+            listpointer = self._pointers[i]
             if listpointer == pointer:
                 return i
         raise KeyError("Pointer {} not found in pointer list!".format(pointer))
@@ -240,6 +309,7 @@ class SimplePointerList(ModifiableMixIn):
         @raises IndexError: on invalid index
         """
         assert isinstance(i, int) and i >= 0
+        self.ensure_mutable()
         del self._pointers[i]
         self.mark_dirty()
 
@@ -261,13 +331,13 @@ class SimplePointerList(ModifiableMixIn):
         if start is None:
             start = 0
         if end is None:
-            end = len(self._pointers)
+            end = len(self)
         assert isinstance(start, int) and start >= 0
-        assert isinstance(end, int) and end <= len(self._pointers)
+        assert isinstance(end, int) and end <= len(self)
         assert end >= start
 
         for i in range(start, end):
-            yield self._pointers[i]
+            yield self.get_by_index(i)
 
     def mass_update(self, diff, start=None, end=None):
         """
@@ -341,6 +411,18 @@ class OrderedPointerList(SimplePointerList):
         self._keyf = key_func
 
     @classmethod
+    def new(cls, key_func):
+        """
+        Instantiate a new, empty pointerlist.
+
+        @param key_func: a function that returns the bytestring by which this pointer list is sorted.
+        @type key_func: a callable returning L{bytes}
+        @return: a new, empty pointerlist
+        @rtype: L{OrderedPointerList}
+        """
+        return cls([], key_func=key_func)
+
+    @classmethod
     def from_bytes(cls, s, key_func):
         """
         Load a pointer list from the provided bytestring
@@ -393,6 +475,49 @@ class OrderedPointerList(SimplePointerList):
         pointer_list = list(struct.unpack(format, data))
         return cls(pointer_list, key_func=key_func)
 
+    @classmethod
+    def from_zim_file(cls, zim, n, key_func, seek=None):
+        """
+        Load a pointer list from a ZIM file at the specified offset.
+
+        This usually acquires the file lock and calls L{SimplePointerList.from_file},
+        but subclasses may behave differently.
+
+        @param zim: ZIM file to read from
+        @type zim: L{pyzim.archive.Zim}
+        @param n: number of entries in the pointer list.
+        @type n: L{int}
+        @param key_func: a function that returns the bytestring by which this pointer list is sorted.
+        @type key_func: a callable returning L{bytes}
+        @param seek: if specified, seek this position of the file before reading
+        @type seek: L{int} or L{None}
+        @return: the pointerlist read from the file
+        @rtype: L{pyzim.pointerlist.SimplePointerList}
+        """
+        assert isinstance(n, int) and (n >= 0)
+        assert isinstance(seek, int) or (seek is None)
+        with zim.acquire_file() as f:
+            return cls.from_file(f=f, n=n, key_func=key_func, seek=seek)
+
+    @classmethod
+    def from_zim_entry(cls, zim, full_url, key_func):
+        """
+        Load a pointer list from an entry inside a ZIM archive.
+
+        NOTE: it is not possible to validate that the string contains the whole pointer list.
+
+        @param zim: ZIM file to read from
+        @type zim: L{pyzim.archive.Zim}
+        @param full_url: full url of entry to read pointerlist from
+        @type full_url: L{str}
+        @param key_func: a function that returns the bytestring by which this pointer list is sorted.
+        @type key_func: a callable returning L{bytes}
+        @return: the pointerlist parsed from the bytes
+        @rtype: L{pyzim.pointerlist.SimplePointerList}
+        """
+        entry = zim.get_entry_by_full_url(full_url).resolve()
+        return cls.from_bytes(entry.read(), key_func=key_func)
+
     def get(self, key):
         """
         Return the pointer for the specified key.
@@ -406,7 +531,7 @@ class OrderedPointerList(SimplePointerList):
         @raises KeyError: when no matching key was found.
         """
         assert isinstance(key, (str, bytes))
-        return self._pointers[self.get_index(key)]
+        return self.get_by_index(self.get_index(key))
 
     def get_index(self, key):
         """
@@ -423,8 +548,8 @@ class OrderedPointerList(SimplePointerList):
         assert isinstance(key, (str, bytes))
         if isinstance(key, str):
             key = key.encode(constants.ENCODING)
-        i = binarysearch(self._pointers, key, key=self._keyf)
-        if i != len(self._pointers) and self._keyf(self._pointers[i]) == key:
+        i = binarysearch(self, key, key=self._keyf)
+        if i != len(self) and self._keyf(self.get_by_index(i)) == key:
             return i
         raise KeyError("No pointer matching key '{}' found!".format(key))
 
@@ -465,7 +590,7 @@ class OrderedPointerList(SimplePointerList):
             key = key.encode(constants.ENCODING)
         self.ensure_mutable()
         with self._lock:
-            i = binarysearch(self._pointers, key, key=self._keyf)
+            i = binarysearch(self, key, key=self._keyf)
             self._pointers.insert(i, pointer)
             self.mark_dirty()
         return i
@@ -484,7 +609,7 @@ class OrderedPointerList(SimplePointerList):
             key = key.encode(constants.ENCODING)
         self.ensure_mutable()
         with self._lock:
-            i = binarysearch(self._pointers, key, key=self._keyf)
+            i = binarysearch(self, key, key=self._keyf)
             if i != len(self._pointers) and self._keyf(self._pointers[i]) == key:
                 del self._pointers[i]
                 self.mark_dirty()
@@ -508,7 +633,7 @@ class OrderedPointerList(SimplePointerList):
         assert isinstance(key, (str, bytes))
         if isinstance(key, str):
             key = key.encode(constants.ENCODING)
-        return binarysearch(self._pointers, key, key=self._keyf)
+        return binarysearch(self, key, key=self._keyf)
 
     def iter_values(self, start=None, end=None):
         """
@@ -535,7 +660,7 @@ class OrderedPointerList(SimplePointerList):
         assert end >= start
 
         for i in range(start, end):
-            yield self._keyf(self._pointers[i])
+            yield self._keyf(self.get_by_index(i))
 
     def check_sorted(self):
         """
@@ -544,7 +669,7 @@ class OrderedPointerList(SimplePointerList):
         @raises pyzim.exceptions.UnsortedList: when the pointers are not correctly ordered.
         """
         last_key = None
-        for pointer in self._pointers:
+        for pointer in self.iter_pointers():
             key = self._keyf(pointer)
             if (last_key is not None) and (last_key > key):
                 # sort order violated
@@ -561,7 +686,8 @@ class OrderedPointerList(SimplePointerList):
         """
         Print the content of this pointerlist, including the keys.
         """
-        for i, pointer in enumerate(self._pointers):
+        for i in range(len(self)):
+            pointer = self.get_by_index(i)
             print("{} -> {}: {}".format(i, pointer, repr(self._keyf(pointer))))
 
 
@@ -573,3 +699,142 @@ class TitlePointerList(OrderedPointerList):
     but to entry IDs.
     """
     POINTER_FORMAT = "I"
+
+
+# ============ ON-DISK VARIANTS =============
+
+
+class OnDiskSimplePointerList(SimplePointerList):
+    """
+    A variant of L{SimplePointerList} that reads pointers always from the disk.
+
+    This should be more RAM efficient, but beware that it is likely quite slow.
+
+    @ivar _zim: zim this pointer list is part of
+    @type _zim: L{pyzim.archive.Zim}
+    @ivar _offset: offset of this pointerlist in the zim file
+    @type _offset: L{int}
+    @ivar _n: amount of entries in this pointerlist
+    @type _n: L{int}
+    @ivar _item_size: the size of each item in this list in bytes
+    @type _item_size: L{int}
+    """
+    def __init__(self, zim, offset, n):
+        """
+        The default constructor.
+
+        @param zim: zim this pointer list is part of
+        @type zim: L{pyzim.archive.Zim}
+        @param offset: offset of this pointerlist in the zim file
+        @type offset: L{int}
+        @param n: amount of entries in this pointerlist
+        @type n: L{int}
+        """
+        SimplePointerList.__init__(self, [])
+        self._zim = zim
+        self._offset = offset
+        self._n = n
+        self._item_size = struct.calcsize(constants.ENDIAN + self.POINTER_FORMAT)
+        self.mutable = False
+
+    @classmethod
+    def new(cls):
+        raise exceptions.OperationNotSupported("Can not create a new, empty {c}, only load an existing one.".format(c=cls.__name__))
+
+    @classmethod
+    def from_bytes(cls, s):
+        raise exceptions.OperationNotSupported("{c} can not be instantiated from bytes, try to use {c}.from_zim_file() instead!".format(c=cls.__name__))
+
+    @classmethod
+    def from_file(cls, f, n, seek=None):
+        raise exceptions.OperationNotSupported("{c} can not be instantiated directly from a file, try to use {c}.from_zim_file() instead!".format(c=cls.__name__))
+
+    @classmethod
+    def from_zim_file(cls, zim, n, seek=None):
+        assert isinstance(n, int) and (n >= 0)
+        assert isinstance(seek, int) or (seek is None)
+        if seek is None:
+            with zim.acquire_file() as f:
+                seek = f.tell()
+        return cls(zim, n=n, offset=seek)
+
+    @classmethod
+    def from_zim_entry(cls, zim, full_url):
+        entry = zim.get_entry_by_full_url(full_url).resolve()
+        size = entry.get_size()
+        n = (size // struct.calcsize(constants.ENDIAN + cls.POINTER_FORMAT))
+        cluster = entry.get_cluster()
+        offset = cluster.offset + 1 + cluster.get_offset(entry.blob_number)
+        return cls.from_zim_file(zim, n, seek=offset)
+
+    def __len__(self):
+        return self._n
+
+    def get_by_index(self, i):
+        assert isinstance(i, int)
+        if (i >= self._n) or (i < 0):
+            raise IndexError("Index {} is outside of pointer list!".format(i))
+        full_offset = self._offset + (i * self._item_size)
+        with self._zim.acquire_file() as f:
+            f.seek(full_offset)
+            data = f.read(self._item_size)
+        pointer = struct.unpack(constants.ENDIAN + self.POINTER_FORMAT, data)[0]
+        return pointer
+
+
+class OnDiskOrderedPointerList(OnDiskSimplePointerList, OrderedPointerList):
+
+    def __init__(self, zim, offset, n, key_func):
+        """
+        The default constructor.
+
+        @param zim: zim this pointer list is part of
+        @type zim: L{pyzim.archive.Zim}
+        @param offset: offset of this pointerlist in the zim file
+        @type offset: L{int}
+        @param n: amount of entries in this pointerlist
+        @type n: L{int}
+        @param key_func: a function that returns the bytestring by which this pointer list is sorted.
+        @type key_func: a callable returning L{bytes}
+        """
+        OrderedPointerList.__init__(self, pointers=[], key_func=key_func)
+        OnDiskSimplePointerList.__init__(self, zim=zim, offset=offset, n=n)
+
+    @classmethod
+    def new(cls, key_func):
+        raise exceptions.OperationNotSupported("Can not create a new, empty {c}, only load an existing one.".format(c=cls.__name__))
+
+    @classmethod
+    def from_bytes(cls, s, key_func):
+        raise exceptions.OperationNotSupported("{c} can not be instantiated from bytes, try to use {c}.from_zim_file() instead!".format(c=cls.__name__))
+
+    @classmethod
+    def from_file(cls, f, n, key_func, seek=None):
+        raise exceptions.OperationNotSupported("{c} can not be instantiated from a file, try to use {c}.from_zim_file() instead!".format(c=cls.__name__))
+
+    @classmethod
+    def from_zim_file(cls, zim, n, key_func, seek=None):
+        assert isinstance(n, int) and (n >= 0)
+        assert isinstance(seek, int) or (seek is None)
+        if seek is None:
+            with zim.acquire_file() as f:
+                seek = f.tell()
+        return cls(zim=zim, offset=seek, n=n, key_func=key_func)
+
+    @classmethod
+    def from_zim_entry(cls, zim, full_url, key_func):
+        entry = zim.get_entry_by_full_url(full_url).resolve()
+        size = entry.get_size()
+        n = (size // struct.calcsize(constants.ENDIAN + cls.POINTER_FORMAT))
+        cluster = entry.get_cluster()
+        offset = cluster.offset + 1 + cluster.get_offset(entry.blob_number)
+        return cls.from_zim_file(zim, n, seek=offset, key_func=key_func)
+
+
+class OnDiskTitlePointerList(TitlePointerList, OnDiskOrderedPointerList):
+    """
+    A on-disk pointer list used by the ZIM title listings.
+
+    See L{TitlePointerList} and L{OnDiskSimplePointerList} for more info.
+    """
+    pass

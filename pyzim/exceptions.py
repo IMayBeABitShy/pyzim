@@ -96,6 +96,13 @@ class NoCounter(BaseZimException):
     pass
 
 
+class OperationNotSupported(BaseZimException):
+    """
+    Exception raised when a class does not support an operation.
+    """
+    pass
+
+
 class ZimWriteException(BaseZimException):
     """
     Baseclass for exception related to ZIM creation/modification.
@@ -103,7 +110,7 @@ class ZimWriteException(BaseZimException):
     pass
 
 
-class NonMutable(ZimWriteException):
+class NonMutable(ZimWriteException, OperationNotSupported):
     """
     Exception raised when a non-mutable/non-modifiable object is modified.
     """

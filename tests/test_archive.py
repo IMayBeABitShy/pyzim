@@ -21,12 +21,13 @@ class ZimReaderTests(unittest.TestCase, TestBase):
     Tests for L{pyzim.archive.Zim} in reading mode.
     """
 
+    policy = policy.DEFAULT_POLICY
+
     def test_open(self):
         """
         Test L{pyzim.archive.Zim.open} on ZTS-small.
         """
-        zim_policy = policy.DEFAULT_POLICY  # TODO: parameterize
-        zim = Zim.open(self.get_zts_small_path(), policy=zim_policy)
+        zim = Zim.open(self.get_zts_small_path(), policy=self.policy)
         self.assertFalse(zim.closed)
         zim.header.check_compatible()
         self.assertTrue(zim.header.has_main_page)
@@ -63,7 +64,7 @@ class ZimReaderTests(unittest.TestCase, TestBase):
         """
         Test L{pyzim.archive.Zim} as a context manager.
         """
-        with Zim.open(self.get_zts_small_path()) as zim:
+        with Zim.open(self.get_zts_small_path(), policy=self.policy) as zim:
             self.assertFalse(zim.closed)
             zim.header.check_compatible()
             self.assertTrue(zim.header.has_main_page)
@@ -81,7 +82,7 @@ class ZimReaderTests(unittest.TestCase, TestBase):
         """
         Test L{pyzim.archive.Zim.get_entry_at}.
         """
-        with self.open_zts_small() as zim:
+        with self.open_zts_small(policy=self.policy) as zim:
             mainpage_pos = zim._url_pointer_list.get_by_index(zim.header.main_page)
             entry = zim.get_entry_at(mainpage_pos).resolve()
             self.assertIn(b"Test ZIM file", entry.read())
@@ -90,7 +91,7 @@ class ZimReaderTests(unittest.TestCase, TestBase):
         """
         Test L{pyzim.archive.Zim.get_by_url}.
         """
-        with self.open_zts_small() as zim:
+        with self.open_zts_small(policy=self.policy) as zim:
             entry = zim.get_entry_by_url("C", "main.html").resolve()
             self.assertIn(b"Test ZIM file", entry.read())
             with self.assertRaises(exceptions.EntryNotFound):
@@ -102,7 +103,7 @@ class ZimReaderTests(unittest.TestCase, TestBase):
         """
         Test L{pyzim.archive.Zim.get_by_full_url}.
         """
-        with self.open_zts_small() as zim:
+        with self.open_zts_small(policy=self.policy) as zim:
             entry = zim.get_entry_by_full_url("Cmain.html").resolve()
             self.assertIn(b"Test ZIM file", entry.read())
             with self.assertRaises(exceptions.EntryNotFound):
@@ -114,7 +115,7 @@ class ZimReaderTests(unittest.TestCase, TestBase):
         """
         Test L{pyzim.archive.Zim.get_content_entry_by_url}.
         """
-        with self.open_zts_small() as zim:
+        with self.open_zts_small(policy=self.policy) as zim:
             entry = zim.get_content_entry_by_url("main.html").resolve()
             self.assertIn(b"Test ZIM file", entry.read())
             with self.assertRaises(exceptions.EntryNotFound):
@@ -124,7 +125,7 @@ class ZimReaderTests(unittest.TestCase, TestBase):
         """
         Test L{pyzim.archive.Zim.get_by_url_index}.
         """
-        with self.open_zts_small() as zim:
+        with self.open_zts_small(policy=self.policy) as zim:
             entry = zim.get_entry_by_url_index(zim.header.main_page).resolve()
             self.assertIn(b"Test ZIM file", entry.read())
             with self.assertRaises(exceptions.EntryNotFound):
@@ -139,7 +140,7 @@ class ZimReaderTests(unittest.TestCase, TestBase):
         # for this test, we need to be capable of modifying the header
         # so we work on a copy of ZTS-small
         with self.open_zts_small_dir() as zimdir:
-            with zimdir.open(mode="u") as zim:
+            with zimdir.open(mode="u", policy=self.policy) as zim:
                 entry = zim.get_mainpage_entry().resolve()
                 self.assertIn(b"Test ZIM file", entry.read())
                 # modify header so that it does not have a mainpage
@@ -159,7 +160,7 @@ class ZimReaderTests(unittest.TestCase, TestBase):
         # and tested there
         urls_seen = []
         has_seen_mainpage = False
-        with self.open_zts_small() as zim:
+        with self.open_zts_small(policy=self.policy) as zim:
             for entry in zim.iter_entries():
                 url = entry.url
                 self.assertNotIn(url, urls_seen)
@@ -182,7 +183,7 @@ class ZimReaderTests(unittest.TestCase, TestBase):
         # don't bother with start and end, as those are passed to pointerlist
         # and tested there
 
-        with self.open_zts_small() as zim:
+        with self.open_zts_small(policy=self.policy) as zim:
             # figure out number of articles
             num_articles = len(zim._article_title_pointer_list)
 
@@ -204,7 +205,7 @@ class ZimReaderTests(unittest.TestCase, TestBase):
         """
         Test L{pyzim.archive.Zim.iter_mimetypes}.
         """
-        with self.open_zts_small() as zim:
+        with self.open_zts_small(policy=self.policy) as zim:
             # figure out actual number of mimetypes
             seen_mimetypes = []
             for entry in zim.iter_entries():
@@ -224,7 +225,7 @@ class ZimReaderTests(unittest.TestCase, TestBase):
 
         # unicode strings
         mimetypes = []
-        with self.open_zts_small() as zim:
+        with self.open_zts_small(policy=self.policy) as zim:
             for mt in zim.iter_mimetypes(as_unicode=True):
                 self.assertIsInstance(mt, str)
                 self.assertNotIn(mt, mimetypes)
@@ -235,7 +236,7 @@ class ZimReaderTests(unittest.TestCase, TestBase):
         """
         Test L{pyzim.archive.Zim.iter_clusters}.
         """
-        with self.open_zts_small() as zim:
+        with self.open_zts_small(policy=self.policy) as zim:
             # check raise on invalid start, end
             with self.assertRaises(IndexError):
                 for zimcluster in zim.iter_clusters(start=-1):
@@ -273,7 +274,7 @@ class ZimReaderTests(unittest.TestCase, TestBase):
         """
         Test (some of) the pointer lists.
         """
-        with self.open_zts_small() as zim:
+        with self.open_zts_small(policy=self.policy) as zim:
             zim._url_pointer_list.check_sorted()
             zim._entry_title_pointer_list.check_sorted()
             zim._article_title_pointer_list.check_sorted()
@@ -282,7 +283,7 @@ class ZimReaderTests(unittest.TestCase, TestBase):
         """
         Test L{pyzim.archive.Zim.get_cluster_index_by_offset}.
         """
-        with self.open_zts_small() as zim:
+        with self.open_zts_small(policy=self.policy) as zim:
             cluster_1 = zim.get_cluster_by_index(1)
             with self.assertRaises(KeyError):
                 zim.get_cluster_index_by_offset(cluster_1.offset + 7)
@@ -297,7 +298,7 @@ class ZimReaderTests(unittest.TestCase, TestBase):
         """
         Test L{pyzim.archive.Zim.get_metadata} and related functions.
         """
-        with self.open_zts_small() as zim:
+        with self.open_zts_small(policy=self.policy) as zim:
             self.assertEqual(zim.get_metadata("Title", as_unicode=False), b"Test ZIM file")
             self.assertEqual(zim.get_metadata("Title", as_unicode=True), u"Test ZIM file")
             self.assertIsNone(zim.get_metadata("_test", as_unicode=False))
@@ -347,7 +348,7 @@ class ZimReaderTests(unittest.TestCase, TestBase):
         """
         Test L{pyzim.archive.Zim.get_checksum} and L{pyzim.archive.Zim.calculate_checksum}.
         """
-        with self.open_zts_small() as zim:
+        with self.open_zts_small(policy=self.policy) as zim:
             read_checksum = zim.get_checksum()
             self.assertIsInstance(read_checksum, bytes)
             self.assertEqual(len(read_checksum), constants.CHECKSUM_LENGTH)
@@ -361,6 +362,8 @@ class ZimWriterTests(unittest.TestCase, TestBase):
     """
     Tests for L{pyzim.archive.Zim} in writing/update mode.
     """
+
+    policy = policy.DEFAULT_POLICY
 
     def test_meta_zimcheck_warning(self):
         """
@@ -377,7 +380,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Test L{pyzim.archive.Zim.add_item}.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 # check invalid values
                 with self.assertRaises(TypeError):
                     zim.add_item("test")
@@ -406,7 +409,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Populate a new ZIM file, testing that the whole writing works.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 self.populate_zim(zim)
                 zim._url_pointer_list.check_sorted()
                 zim._entry_title_pointer_list.check_sorted()
@@ -422,7 +425,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         It appears that this double flushing can be quite strenous on pyzim code.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 self.populate_zim(zim)
                 zim.flush()
                 zim._url_pointer_list.check_sorted()
@@ -437,7 +440,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Populate a new ZIM file twice, testing that the whole writing works.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 self.populate_zim(zim)
                 self.populate_zim(zim)  # yes, twice
                 zim._url_pointer_list.check_sorted()
@@ -452,9 +455,9 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Create a new ZIM file, close it, open again and test that the whole writing works.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 pass
-            with zimdir.open(mode="u") as zim:
+            with zimdir.open(mode="u", policy=self.policy) as zim:
                 self.populate_zim(zim)
                 zim._url_pointer_list.check_sorted()
                 zim._entry_title_pointer_list.check_sorted()
@@ -470,9 +473,9 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         You'd be surprised how many bugs this particular test case detected.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 self.populate_zim(zim)
-            with zimdir.open(mode="u") as zim:
+            with zimdir.open(mode="u", policy=self.policy) as zim:
                 self.populate_zim(zim)
                 zim._url_pointer_list.check_sorted()
                 zim._entry_title_pointer_list.check_sorted()
@@ -486,7 +489,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Populate a new ZIM file with mode x, testing that the whole writing works.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="x") as zim:
+            with zimdir.open(mode="x", policy=self.policy) as zim:
                 self.populate_zim(zim)
                 zim._url_pointer_list.check_sorted()
                 zim._entry_title_pointer_list.check_sorted()
@@ -495,7 +498,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
             if self.has_zimcheck():
                 self.run_zimcheck(zimdir.get_full_path())
             with self.assertRaises(FileExistsError):
-                with zimdir.open(mode="x") as zim:
+                with zimdir.open(mode="x", policy=self.policy) as zim:
                     pass
             if self.has_zimcheck():
                 self.run_zimcheck(zimdir.get_full_path())
@@ -505,9 +508,9 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Populate a new ZIM file, testing that all entries in X namespace are uncompressed.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 self.populate_zim(zim)
-            with zimdir.open(mode="r") as zim:
+            with zimdir.open(mode="r", policy=self.policy) as zim:
                 for entry in zim.iter_entries():
                     if entry.namespace == "X":
                         cluster = entry.get_cluster()
@@ -590,9 +593,9 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Test that metadata writing.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 zim.set_metadata("Title", "testtitle")
-            with zimdir.open(mode="r") as zim:
+            with zimdir.open(mode="r", policy=self.policy) as zim:
                 self.assertEqual(zim.get_metadata("Title"), "testtitle")
 
     def test_metadata_live(self):
@@ -600,7 +603,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Test metadata writing and reading on the same object.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 self.populate_zim(zim)
                 for k, v in self.TEST_ZIM_META.items():
                     self.assertEqual(zim.get_metadata(k), v)
@@ -619,9 +622,9 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Test metadata writing and reading on a written and loaded zim file.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 self.populate_zim(zim)
-            with zimdir.open(mode="r") as zim:
+            with zimdir.open(mode="r", policy=self.policy) as zim:
                 for k, v in self.TEST_ZIM_META.items():
                     self.assertEqual(zim.get_metadata(k), v)
                 # also test type errors here
@@ -639,7 +642,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Populate a ZIM file, then read back the content without closing it.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 # prepare ZIM
                 self.populate_zim(zim)
                 zim.flush()
@@ -689,10 +692,10 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Populate a ZIM file, then close and re-open the ZIM and verify it.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 # prepare ZIM
                 self.populate_zim(zim)
-            with zimdir.open(mode="r") as zim:
+            with zimdir.open(mode="r", policy=self.policy) as zim:
                 # home.txt
                 home_entry = zim.get_entry_by_url("C", "home.txt")
                 self.assertEqual(home_entry.namespace, "C")
@@ -743,7 +746,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Populate a ZIM file and check that the article title pointer is correct without closing it.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 self.populate_zim(zim)
                 zim.flush()
                 article_titles = list(zim._article_title_pointer_list.iter_values())
@@ -762,9 +765,9 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Populate a ZIM file and check that the article title pointer is correct with a re-opened file.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 self.populate_zim(zim)
-            with zimdir.open(mode="r") as zim:
+            with zimdir.open(mode="r", policy=self.policy) as zim:
                 article_titles = list(zim._article_title_pointer_list.iter_values())
                 self.assertEqual(len(article_titles), 3)
                 self.assertIn(b"Welcome!", article_titles)
@@ -781,7 +784,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Populate a ZIM file and edit it to change article status.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 self.populate_zim(zim)
                 zim.flush()
                 home_entry = zim.get_entry_by_full_url("Chome.txt")
@@ -808,7 +811,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Populate a ZIM file and edit it to change article status.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 self.populate_zim(zim)
                 zim.flush()
                 home_entry = zim.get_entry_by_full_url("Chome.txt")
@@ -835,7 +838,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Populate a ZIM file and edit it to change titles.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 self.populate_zim(zim)
                 zim.flush()
                 home_entry = zim.get_entry_by_full_url("Chome.txt")
@@ -862,13 +865,13 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Populate a ZIM file and edit it to change titles, then write it and read it again.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 self.populate_zim(zim)
                 zim.flush()
                 home_entry = zim.get_entry_by_full_url("Chome.txt")
                 home_entry.title = "Test Title"
                 home_entry.flush()
-            with zimdir.open(mode="r") as zim:
+            with zimdir.open(mode="r", policy=self.policy) as zim:
                 article_titles = list(zim._article_title_pointer_list.iter_values())
                 self.assertEqual(len(article_titles), 3)
                 self.assertNotIn(b"Welcome!", article_titles)
@@ -927,7 +930,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Test L{pyzim.archive.Zim.set_mainpage_url}.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 # add an entry that we can link to
                 self.add_item(zim, "C", "mainpage.html", "Main Page", "text/html", "content")
                 self.add_item(zim, "C", "alternative.html", "Alternative Page", "text/html", "alternative")
@@ -978,7 +981,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Test L{pyzim.archive.Zim.remove_entry_by_full_url}.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 # check invalid values
                 with self.assertRaises(TypeError):
                     zim.remove_entry_by_full_url(12)
@@ -1017,7 +1020,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
                 self.assertEqual(new_entry_titles, entry_titles)
                 self.assertEqual(new_article_titles, article_titles)
             # open the ZIM again, so we can re-populate it and use the same testing strategy
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 self.populate_zim(zim)
                 zim.flush()
                 # remove an entry and empty the blob
@@ -1028,7 +1031,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
                 # check that the blob is empty
                 self.assertEqual(zim.get_cluster_by_index(entry.cluster_number).read_blob(entry.blob_number), b"")
             # open the ZIM again, so we can re-populate it and use the same testing strategy
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 self.populate_zim(zim)
                 zim.flush()
                 # remove an entry and remove the blob
@@ -1041,7 +1044,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
                 self.assertEqual(zim.get_cluster_by_index(entry.cluster_number).get_number_of_blobs(), old_num_blobs - 1)
                 self.assertNotIn(zim.get_cluster_by_index(entry.cluster_number).read_blob(entry.blob_number), (b"", b"This is the mainpage."))
             # now, test that redirects will still work even if we remove an entry
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 self.populate_zim(zim)
                 zim.flush()
                 zim.remove_entry_by_full_url("Cmarkdown.md")
@@ -1054,7 +1057,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Test L{pyzim.archive.Zim.entry_at_url_is_article} on the same archive.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 # check invalid values
                 with self.assertRaises(TypeError):
                     zim.entry_at_url_is_article(12)
@@ -1073,7 +1076,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Test L{pyzim.archive.Zim.entry_at_url_is_article} while reloading the archive.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 # check invalid values
                 with self.assertRaises(TypeError):
                     zim.entry_at_url_is_article(12)
@@ -1081,7 +1084,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
                     zim.entry_at_url_is_article("Tnamespace.txt")
                 # populate ZIM
                 self.populate_zim(zim)
-            with zimdir.open(mode="r") as zim:
+            with zimdir.open(mode="r", policy=self.policy) as zim:
                 # test ZIM articles
                 self.assertTrue(zim.entry_at_url_is_article("Chome.txt"))
                 self.assertFalse(zim.entry_at_url_is_article("Chidden.txt"))
@@ -1092,7 +1095,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Test L{pyzim.archive.Zim.write_cluster}.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 # test invalid values
                 with self.assertRaises(TypeError):
                     zim.write_cluster("test")
@@ -1134,7 +1137,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Test L{pyzim.archive.Zim.add_full_url_redirect}.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 # test invalid values
                 with self.assertRaises(TypeError):
                     zim.add_full_url_redirect(1, "target")
@@ -1167,7 +1170,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
                 zim.add_full_url_redirect("Credirect", "Cmarkdown.md")
                 self.assertEqual(zim.get_entry_by_full_url("Credirect").resolve().read(), b"#Markdown Test")
             # use a new ZIM
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 # this time, add multiple, recursive, initially unresolvable redirects
                 # also use multiple namespaces and titles here
                 zim.add_full_url_redirect("Credirect1", "Centry.txt")  # no specific title
@@ -1191,7 +1194,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Test L{pyzim.archive.Zim.add_redirect}.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 # test invalid values
                 with self.assertRaises(TypeError):
                     zim.add_redirect(1, "target")
@@ -1220,7 +1223,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
                 zim.add_redirect("redirect", "markdown.md")
                 self.assertEqual(zim.get_entry_by_full_url("Credirect").resolve().read(), b"#Markdown Test")
             # use a new ZIM
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 self.populate_zim(zim)
                 # this time, add multiple, recursive, initially unresolvable redirects
                 # also use multiple namespaces and titles here
@@ -1245,7 +1248,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Test editing of the URL of an existing entry.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 # prepare ZIM
                 self.populate_zim(zim)
                 zim.add_redirect("redirect", "home.txt")
@@ -1278,7 +1281,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Test editing of the title of an existing entry.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 # prepare ZIM
                 self.populate_zim(zim)
                 zim.flush()
@@ -1328,7 +1331,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
         Test editing of the article status of an existing entry.
         """
         with self.open_temp_dir() as zimdir:
-            with zimdir.open(mode="w") as zim:
+            with zimdir.open(mode="w", policy=self.policy) as zim:
                 # prepare ZIM
                 self.populate_zim(zim)
                 zim.flush()
@@ -1368,3 +1371,12 @@ class ZimWriterTests(unittest.TestCase, TestBase):
                 zim._article_title_pointer_list.check_sorted()
             if self.has_zimcheck():
                 self.run_zimcheck(zimdir.get_full_path())
+
+
+# ============== ALTERNATE POLICY TESTS ==================
+
+class LowRamZimReaderTests(ZimReaderTests):
+    """
+    Like L{ZimReaderTests}, but using L{pyzim.policy.LOW_RAM_DECOMP_POLICY}.
+    """
+    policy = policy.LOW_RAM_DECOMP_POLICY

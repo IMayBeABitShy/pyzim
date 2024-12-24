@@ -16,10 +16,8 @@ from .cluster import ModifiableClusterWrapper, EmptyCluster
 from .exceptions import ZimFileClosed, EntryNotFound, BindingError, ZimWriteException
 from .header import Header
 from .mimetypelist import MimeTypeList
-from .pointerlist import SimplePointerList, OrderedPointerList, TitlePointerList
 from .entry import BaseEntry, RedirectEntry
 from .policy import Policy, DEFAULT_POLICY
-from .util.ioutil import read_n_bytes
 from .modifiable import ModifiableMixIn
 from .spaceallocator import SpaceAllocator
 from .operationbuffer import OperationBuffer
@@ -290,22 +288,21 @@ class Zim(ModifiableMixIn):
         logger.debug("Reading pointerlists...")
         url_pointer_position = self._base_offset + self.header.url_pointer_position
         cluster_pointer_position = self._base_offset + self.header.cluster_pointer_position
-        with self.filelock:
-            # the URL pointer list
-            self._url_pointer_list = OrderedPointerList.from_file(
-                self._f,
-                self.header.entry_count,
-                key_func=self._get_full_url_for_entry_at,
-                seek=url_pointer_position,
-            )
-            logger.debug("URL pointer list has {} entries.".format(len(self._url_pointer_list)))
-            # the cluster pointer list
-            self._cluster_pointer_list = SimplePointerList.from_file(
-                self._f,
-                self.header.cluster_count,
-                seek=cluster_pointer_position,
-            )
-            logger.debug("Cluster pointer list has {} entries.".format(len(self._cluster_pointer_list)))
+        # the URL pointer list
+        self._url_pointer_list = self.policy.ordered_pointer_list_class.from_zim_file(
+            self,
+            self.header.entry_count,
+            key_func=self._get_full_url_for_entry_at,
+            seek=url_pointer_position,
+        )
+        logger.debug("URL pointer list has {} entries.".format(len(self._url_pointer_list)))
+        # the cluster pointer list
+        self._cluster_pointer_list = self.policy.simple_pointer_list_class.from_zim_file(
+            self,
+            self.header.cluster_count,
+            seek=cluster_pointer_position,
+        )
+        logger.debug("Cluster pointer list has {} entries.".format(len(self._cluster_pointer_list)))
         self._url_pointer_list.mutable = self._writable
         self.add_submodifiable(self._url_pointer_list)
         self._cluster_pointer_list.mutable = self._writable
@@ -318,23 +315,19 @@ class Zim(ModifiableMixIn):
         # via an URL
         if self.has_entry_for_full_url(constants.URL_ENTRY_TITLE_INDEX):
             logger.debug("Reading entry title pointer list via URL...")
-            self._entry_title_pointer_list = TitlePointerList.from_bytes(
-                self.get_entry_by_full_url(constants.URL_ENTRY_TITLE_INDEX).read(),
+            self._entry_title_pointer_list = self.policy.title_pointer_list_class.from_zim_entry(
+                self,
+                constants.URL_ENTRY_TITLE_INDEX,
                 key_func=self._get_namespace_title_for_entry_by_url_index,
             )
         else:
             # unfortunately, we need to fall back to the header title pointer position
             # this requires us to re-acquire the file lock
             logger.debug("Entry title pointer list not available via URL, falling back to header information...")
-            with self.filelock:
-                self._f.seek(self.header.title_pointer_position)
-                entry_title_pointer_data = read_n_bytes(
-                    self._f,
-                    4 * self.header.entry_count,
-                    raise_on_incomplete=True
-                )
-            self._entry_title_pointer_list = TitlePointerList.from_bytes(
-                entry_title_pointer_data,
+            self._cluster_pointer_list = self.policy.title_pointer_list_class.from_zim_file(
+                self,
+                self.header.entry_count,
+                seek=self.header.title_pointer_position,
                 key_func=self._get_namespace_title_for_entry_by_url_index,
             )
         logger.debug("Entry title pointer list has {} entries.".format(len(self._entry_title_pointer_list)))
@@ -342,14 +335,15 @@ class Zim(ModifiableMixIn):
         self.add_submodifiable(self._entry_title_pointer_list)
         # the article title pointer list
         if self.has_entry_for_full_url(constants.URL_ARTICLE_TITLE_INDEX):
-            self._article_title_pointer_list = TitlePointerList.from_bytes(
-                self.get_entry_by_full_url(constants.URL_ARTICLE_TITLE_INDEX).read(),
+            self._article_title_pointer_list = self.policy.title_pointer_list_class.from_zim_entry(
+                self,
+                constants.URL_ARTICLE_TITLE_INDEX,
                 key_func=self._get_title_for_entry_by_url_index,
             )
             logger.debug("Article title pointer list has {} entries.".format(len(self._article_title_pointer_list)))
         else:
             logger.debug("No article title pointer list found, creating a new one")
-            self._article_title_pointer_list = TitlePointerList([], key_func=self._get_title_for_entry_by_url_index)
+            self._article_title_pointer_list = self.policy.title_pointer_list_class.new(key_func=self._get_title_for_entry_by_url_index)
             if self._writable:
                 # add a placeholder item for the list, so we can later
                 # set the blob directly
@@ -377,10 +371,10 @@ class Zim(ModifiableMixIn):
         logger.debug("Creating initial components for an empty archive...")
         self.header = Header.placeholder()
         self.mimetypelist = MimeTypeList([])
-        self._url_pointer_list = OrderedPointerList([], key_func=self._get_full_url_for_entry_at)
-        self._cluster_pointer_list = SimplePointerList([])
-        self._entry_title_pointer_list = TitlePointerList([], key_func=self._get_namespace_title_for_entry_by_url_index)
-        self._article_title_pointer_list = TitlePointerList([], key_func=self._get_title_for_entry_by_url_index)
+        self._url_pointer_list = self.policy.ordered_pointer_list_class.new(key_func=self._get_full_url_for_entry_at)
+        self._cluster_pointer_list = self.policy.simple_pointer_list_class.new()
+        self._entry_title_pointer_list = self.policy.title_pointer_list_class.new(key_func=self._get_namespace_title_for_entry_by_url_index)
+        self._article_title_pointer_list = self.policy.title_pointer_list_class.new(key_func=self._get_title_for_entry_by_url_index)
         # add them all as mutable submodifiables and mark them as dirty
         submodifiables = [
             self.header,
