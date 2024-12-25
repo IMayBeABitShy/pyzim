@@ -12,7 +12,7 @@ build-backend = "hatchling.build"
 # project metadata
 [project]
 name = "python-zim"
-version = "0.1.0"
+version = "0.1.1"
 description = "Library for working with ZIM files"
 authors = [
   { name = "IMayBeABitShy", email = "imaybeabitshy@gmail.com" },
