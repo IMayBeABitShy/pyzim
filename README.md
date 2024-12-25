@@ -104,13 +104,13 @@ At the time of writing this document, `pyzim` achieves a (statement-based) test 
 
 ## FAQ
 
-**Why do I get an `UnsupportedCompressionType` exception with a ZIM file?
+**Why do I get an `UnsupportedCompressionType` exception with a ZIM file?**
 
 `pyzim` depends on other libraries to handle the decompression of data from the ZIM file. Luckily, the vast majority of these libraries come included with most python distributions. Unfortunately, these libraries may not be included when you build python yourself. Additionally, the most common compression in modern ZIM files is `zstandard`, for which `pyzim` depends on `pyzstd`. Please ensure that this library is installed.
 
 You can automatically install all optional compression dependencies by installing the `compression` extra for `pyzim`.
 
-**Why do I get a `BindRequired` exception / what does "bound/unbound" mean?
+**Why do I get a `BindRequired` exception / what does "bound/unbound" mean?**
 
 `pyzim` differentiates between *bound* and *unbound* entries/clusters/... . An *unbound* object is an object that is not attached to any ZIM object. By default, most objects should be automatically bound by the various methods for accessing them, but if you are accessing any class directly you may encounter unbound ones.
 
