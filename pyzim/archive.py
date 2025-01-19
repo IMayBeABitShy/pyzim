@@ -127,36 +127,11 @@ class Zim(ModifiableMixIn):
 
         self._init_caches()
 
-        if self._mode in ("r", "u", "a"):
-            # this is not a new file
-            new_file = False
-            # need to load header, mimetypes, pointerlist, ...
-            if self._mode == "r":
-                # read only
-                logger.info("Opening ZIM archive in read-only mode....")
-                self._writable = self.mutable = False
-            else:
-                # write allowed
-                logger.info("Opening ZIM archive in update/modify mode...")
-                self._writable = self.mutable = True
-            self._load_header()
-            self._load_mimetypelist()
-            self._load_pointerlists()
-            self.spaceallocator = SpaceAllocator(file_end=self.header.checksum_position)
-        elif self._mode == "w":
-            # this is a new file
-            new_file = True
-            # create new header, mimetypelist, pointerlists, ...
-            logger.info("Creating a new ZIM archive...")
-            self._writable = True
-            with self.filelock:
-                self._f.seek(self._base_offset)
-                self._f.truncate()
-        else:
-            raise ValueError("Unrecognized mode: '{}'!".format(mode))
-
+        self._writable = self.mutable = (self._mode in ("w", "u", "a"))
         if self._writable:
             # instantiate compression strategy, ...
+            # we need to do this before we load the pointer lists as we
+            # may want to add items when in update mode when they are missing
             logger.debug("Instantiating writing-related components...")
             self.compression_strategy = self.policy.compression_strategy_class(
                 zim=self,
@@ -172,6 +147,32 @@ class Zim(ModifiableMixIn):
             self.compression_strategy = None
             self.uncompressed_compression_strategy = None
             self._operation_buffer = None
+
+        if self._mode in ("r", "u", "a"):
+            # this is not a new file
+            new_file = False
+            # need to load header, mimetypes, pointerlist, ...
+            if self._mode == "r":
+                # read only
+                logger.info("Opening ZIM archive in read-only mode....")
+            else:
+                # write allowed
+                logger.info("Opening ZIM archive in update/modify mode...")
+            self._load_header()
+            self._load_mimetypelist()
+            self.spaceallocator = SpaceAllocator(file_end=self.header.checksum_position)
+            self._load_pointerlists()
+        elif self._mode == "w":
+            # this is a new file
+            new_file = True
+            # create new header, mimetypelist, pointerlists, ...
+            logger.info("Creating a new ZIM archive...")
+            with self.filelock:
+                self._f.seek(self._base_offset)
+                self._f.truncate()
+        else:
+            raise ValueError("Unrecognized mode: '{}'!".format(mode))
+
         if new_file:
             # finalize init for new archive, which requires compression strategy to be initialized
             self._init_new()
@@ -324,7 +325,7 @@ class Zim(ModifiableMixIn):
             # unfortunately, we need to fall back to the header title pointer position
             # this requires us to re-acquire the file lock
             logger.debug("Entry title pointer list not available via URL, falling back to header information...")
-            self._entry_pointer_list = self.policy.title_pointer_list_class.from_zim_file(
+            self._entry_title_pointer_list = self.policy.title_pointer_list_class.from_zim_file(
                 self,
                 self.header.entry_count,
                 seek=self.header.title_pointer_position,
