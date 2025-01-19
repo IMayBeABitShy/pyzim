@@ -324,7 +324,7 @@ class Zim(ModifiableMixIn):
             # unfortunately, we need to fall back to the header title pointer position
             # this requires us to re-acquire the file lock
             logger.debug("Entry title pointer list not available via URL, falling back to header information...")
-            self._cluster_pointer_list = self.policy.title_pointer_list_class.from_zim_file(
+            self._entry_pointer_list = self.policy.title_pointer_list_class.from_zim_file(
                 self,
                 self.header.entry_count,
                 seek=self.header.title_pointer_position,
