@@ -59,7 +59,7 @@ class Policy(object):
     @type uncompressed_compression_strategy_class: L{pyzim.compressionstrategy.BaseCompressionStrategy}
     @ivar uncompressed_compression_strategy_kwargs: kwargs of compression strategy to use (excluding C{"zim"})
     @type uncompressed_compression_strategy_kwargs: L{dict}
-    @ivar autoflush: automatically write modified clusters and entries. Requires caches to be used. NOTE: cache size should at leat be 2 in this case!
+    @ivar autoflush: automatically write modified clusters and entries. Requires caches to be used. NOTE: cache size should be at leat be 2 in this case!
     @type autoflush: L{bool}
     @ivar truncate: if nonzero, truncate when flushing the file
     @type truncate: L{bool}
@@ -117,7 +117,7 @@ class Policy(object):
         @type uncompressed_compression_strategy_class: L{pyzim.compressionstrategy.BaseCompressionStrategy}
         @ivar uncompressed_compression_strategy_kwargs: kwargs of compression strategy to use (excluding C{"zim"})
         @type uncompressed_compression_strategy_kwargs: L{dict} or L{None}
-        @param autoflush: automatically write modified clusters and entries. Requires caches to be used. NOTE: cache size should at leat be 2 in this case!
+        @param autoflush: automatically write modified clusters and entries. Requires caches to be used. NOTE: cache size should be at leat be 2 in this case!
         @type autoflush: L{bool}
         @param truncate: if nonzero, truncate when flushing the file
         @type truncate: L{bool}

@@ -35,11 +35,11 @@ testing = [
     "tox",
 ]
 compression = [
-    "pyzstd",
+    "zstandard",
 ]
 all = [
     "tox",
-    "pyzstd",
+    "zstandard",
 ]
 
 # wheel generation
@@ -116,7 +116,7 @@ deps = [
     "pydoctor",
 ]
 commands = [
-    ["pydoctor", "--project-name=PyZim", "--project-version=0.0.1", "--project-url=https://github.com/IMayBeABitShy/pyzim", "--intersphinx", "https://docs.python.org/3/objects.inv", "--intersphinx", "https://pyzstd.readthedocs.io/en/latest/objects.inv", "--warnings-as-errors", "--make-html", "--html-output", "html/apidocs", "pyzim", ],
+    ["pydoctor", "--project-name=PyZim", "--project-version=0.0.1", "--project-url=https://github.com/IMayBeABitShy/pyzim", "--intersphinx", "https://docs.python.org/3/objects.inv", "--intersphinx", "https://pyzstd.readthedocs.io/en/latest/objects.inv", "--intersphinx", "https://python-zstandard.readthedocs.io/en/latest/objects.inv", "--warnings-as-errors", "--make-html", "--html-output", "html/apidocs", "pyzim", ],
 ]
 
 [tool.tox.env.testdocs]
@@ -129,6 +129,6 @@ deps = [
     "pydoctor",
 ]
 commands = [
-    ["pydoctor", "--project-name=PyZim Tests", "--project-version=0.0.1", "--project-url=https://github.com/IMayBeABitShy/pyzim", "--intersphinx", "https://docs.python.org/3/objects.inv", "--intersphinx", "https://pyzstd.readthedocs.io/en/latest/objects.inv", "--intersphinx", "file://html/apidocs/objects.inv", "--warnings-as-errors", "--make-html", "--html-output", "html/testdocs", "tests", ],
+    ["pydoctor", "--project-name=PyZim Tests", "--project-version=0.0.1", "--project-url=https://github.com/IMayBeABitShy/pyzim", "--intersphinx", "https://docs.python.org/3/objects.inv", "--intersphinx", "https://pyzstd.readthedocs.io/en/latest/objects.inv",  "--intersphinx", "file://html/apidocs/objects.inv", "--warnings-as-errors", "--make-html", "--html-output", "html/testdocs", "tests", ],
 ]
 

@@ -20,6 +20,11 @@ try:
 except ImportError:  # pragma: no cover
     pyzstd = None
 
+try:
+    import zstandard
+except ImportError:  # pragma: no cover
+    zstandard = None
+
 from .exceptions import UnsupportedCompressionType
 
 
@@ -86,6 +91,7 @@ class BaseCompressionInterface(object):
     Additionally, the following options are recommended to be implemented:
 
         - general.target: target to optimize compression for (e.g. performance, compression).
+        - general.allow_threads: only use threads for (de)compression if this is nonzero
 
     @cvar compression_type: compression type used by this interface
     @type compression_type: L{pyzim.compression.CompressionType}
@@ -784,6 +790,110 @@ if zlib is not None:  # pragma: no cover
     CompressionRegistry.register(CompressionType.ZLIB, ZlibCompressionInterface)
 
 
+class ZstandardDecompressorWrapper(object):
+    """
+    A wrapper around L{zstandard.ZstdDecompressionObj} providing
+    some missing functionality.
+    """
+    def __init__(self, decompress_obj):
+        """
+        The default constructor.
+
+        @param decompress_obj: the decompression object that should be wrapped
+        @type decompress_obj: L{zstandard.ZstdDecompressionObj}
+        """
+        self.decompress_obj = decompress_obj
+        self.buffer = b""
+
+    def decompress(self, data, max_length=None):
+        if self.buffer:
+            if ((max_length is None) or (max_length > len(self.buffer))):
+                t, self.buffer = self.buffer, b""
+                return t
+            else:
+                t, self.buffer = self.buffer[:max_length], self.buffer[max_length:]
+                return t
+        decompressed = self.decompress_obj.decompress(data)
+        if self.buffer:
+            decompressed = self.buffer + decompressed
+        if (max_length is not None) and (len(decompressed) > max_length):
+            decompressed, self.buffer = decompressed[:max_length], decompressed[max_length:]
+        return decompressed
+
+    def flush(self, length=0):
+        t, self.buffer = self.buffer, b""
+        return t
+
+    @property
+    def eof(self):
+        return (self.decompress_obj.eof) and (not self.buffer)
+
+    @property
+    def needs_input(self):
+        # return not self.eof
+        return not self.buffer
+
+    @property
+    def unused_data(self):
+        return self.decompress_obj.unused_data
+
+
+class ZstandardCompressionInterface(BaseCompressionInterface):
+    """
+    A L{pyzim.compression.BaseCompressionInterface} for zstd compression using C{zstandard}.
+
+    The following options are supported:
+
+        - zstd.option: a zstd level (L{int}) or advanced compression parameters (L{dict})
+        - zstd.dict: pre-trained dictionary for compression (type C{zstd.ZstdCompressionDict})
+        - zstd.max_window_size: max window size for decompreession operations
+        - zstd.buffer_size: size of the output buffer
+    """
+
+    compression_type = CompressionType.ZSTD
+
+    @staticmethod
+    def get_compressor(options={}):
+        level_or_option = options.get("zstd.option", None)
+        zdict = options.get("zstd.dict", None)
+        target = options.get("general.target", CompressionTarget.ANY)
+        threads = (-1 if options.get("general.allow_threads", True) else 0)
+        write_content_size = None
+        write_checksum = None
+        if level_or_option is None:
+            if target in (CompressionTarget.REASONABLE_COMPRESSION, ):
+                level_or_option = 19
+            elif target in (CompressionTarget.MAX_COMPRESSION, ):
+                level_or_option = 22
+                if isinstance(level_or_option, int) or (level_or_option is None):
+                    # we can not set this if compression objects have been specified
+                    write_checksum = False
+                    write_content_size = False
+            elif target in (CompressionTarget.FASTEST_COMPRESSION, CompressionTarget.FASTEST_DECOMPRESSION):
+                level_or_option = 2
+        compressor = zstandard.ZstdCompressor(
+            level=(level_or_option if isinstance(level_or_option, int) else 3),
+            dict_data=zdict,
+            compression_params=(level_or_option if not (isinstance(level_or_option, int) or (level_or_option is None)) else None),
+            write_checksum=write_checksum,
+            write_content_size=write_content_size,
+            threads=threads,
+        )
+        return compressor.compressobj()
+
+    @staticmethod
+    def get_decompressor(options={}):
+        zdict = options.get("zstd.dict", None)
+        max_window_size = options.get("zstd.max_window_size", 0)
+        write_size = options.get("zstd.buffer_size", 2 ** 14)
+        decompressor = zstandard.ZstdDecompressor(dict_data=zdict, max_window_size=max_window_size)
+        return ZstandardDecompressorWrapper(decompressor.decompressobj(write_size=write_size))
+
+
+if zstandard is not None:  # pragma: no cover
+    CompressionRegistry.register(CompressionType.ZSTD, ZstandardCompressionInterface)
+
+
 class PyZstdCompressionInterface(BaseCompressionInterface):
     """
     A L{pyzim.compression.BaseCompressionInterface} for zstd compression using C{pyzstd}.
@@ -804,7 +914,7 @@ class PyZstdCompressionInterface(BaseCompressionInterface):
         if level_or_option is None:
             if target in (CompressionTarget.REASONABLE_COMPRESSION, ):
                 level_or_option = 19
-            elif target in (CompressionTarget.MAX_COMPRESSION, CompressionTarget.FASTEST_DECOMPRESSION):
+            elif target in (CompressionTarget.MAX_COMPRESSION, ):
                 level_or_option = 22
             elif target in (CompressionTarget.FASTEST_COMPRESSION, CompressionTarget.FASTEST_DECOMPRESSION):
                 level_or_option = 2

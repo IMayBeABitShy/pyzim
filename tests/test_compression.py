@@ -129,6 +129,28 @@ class CompressionTests(unittest.TestCase, TestBase):
                 self.assertEqual(decompressor.unused_data, b"")
                 self.assertEqual(decompressed, raw_data)
 
+    def test_compression_interfaces_cross(self):
+        """
+        Test compression and decompression between compression interfaces of the same type.
+        """
+        raw_data = b"test hello world foo bar baz"
+        for compression_type in CompressionType:
+            for compression_target in CompressionTarget:
+                for compression_interface_c in CompressionRegistry.iter_for(compression_type):
+                    for compression_interface_d in CompressionRegistry.iter_for(compression_type):
+                        compressor = compression_interface_c.get_compressor(
+                            {"general.target": compression_target},
+                        )
+                        compressed = compressor.compress(raw_data)
+                        compressed += compressor.flush()
+                        decompressor = compression_interface_d.get_decompressor()
+                        decompressed = decompressor.decompress(compressed, max_length=10)
+                        while (not decompressor.needs_input) and not (decompressor.eof):
+                            decompressed += decompressor.decompress(b"")
+
+                        self.assertEqual(decompressor.unused_data, b"")
+                        self.assertEqual(decompressed, raw_data)
+
     def test_decompressing_reader_read(self):
         """
         Test L{pyzim.compression.DecompressingReader.read}.
