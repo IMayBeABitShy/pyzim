@@ -22,12 +22,13 @@ Most read and write operations on ZIM files are implemented.
 - edit existig ZIM files (add new entries, remove entries, edit them and clusters)
 - a space allocation algorithm tries to recycle unused space in a ZIM file when it is being edited.
 - work with ZIM files at a specified offset (untested)
+- search existing ZIM files
 
 **Missing features:**
 
 The following features are still missing, but planned:
 
-- search functions
+- search indexing when creating/updating a ZIM
 - simple illustration methods (you can already read metadata illustrations, but you will have to convert them to PIL images manually)
 - various additional CLI tools
 - support for ZIM files without namespaces

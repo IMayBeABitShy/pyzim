@@ -10,10 +10,10 @@ import hashlib
 import os
 import logging
 
-from . import constants
+from . import constants, search
 from .blob import InMemoryBlobSource, EmptyBlobSource
 from .cluster import ModifiableClusterWrapper, EmptyCluster
-from .exceptions import ZimFileClosed, EntryNotFound, BindingError, ZimWriteException
+from .exceptions import ZimFileClosed, EntryNotFound, BindingError, ZimWriteException, MissingDependency, ZimFeatureMissing
 from .header import Header
 from .mimetypelist import MimeTypeList
 from .entry import BaseEntry, RedirectEntry
@@ -2026,6 +2026,40 @@ class Zim(ModifiableMixIn):
         with self.acquire_file() as f:
             f.seek(self.header.checksum_position)
             f.write(new_checksum)
+
+    # =============== search interface =============
+
+    def get_search(self):
+        """
+        Return an object that can be used to search this ZIM.
+
+        There are various ways to search a ZIM, for which pyzim tries to
+        provide a unified interface. This method will return any available
+        search. Said search may, however, be more limited than other
+        search implementations. It is as such recommended not to use this
+        method and instead manually instanciating one of the child classes
+        of L{pyzim.search.BaseSearch}. Use this method only if you don't
+        care about what search you get.
+
+        Currently, this method will try to provide you with a xapian
+        fulltext search, falling back to a xapian title search and finally
+        to a simple titlestart based search.
+
+        @return: a search object that can be used to search this ZIM
+        @rtype: L{pyzim.search.BaseSearch}
+        """
+        # first, try the xapian fulltext search
+        try:
+            return search.XapianSearch.open_fulltext(self)
+        except (ZimFeatureMissing, MissingDependency):
+            pass
+        # secondly, try the xapian title search
+        try:
+            return search.XapianSearch.open_title(self)
+        except (ZimFeatureMissing, MissingDependency):
+            pass
+        # finally, fall back to the title search
+        return search.TitleStartSearch(self)
 
     # ============ other interfaces ===============
 

@@ -15,6 +15,10 @@ This module contains various constants.
 @type URL_ENTRY_TITLE_INDEX: L{str}
 @var URL_ARTICLE_TITLE_INDEX: full URL to the v1 title index of all articles
 @type URL_ARTICLE_TITLE_INDEX: L{str}
+@var URL_XAPIAN_TITLE_INDEX: full URL to the xapian title index
+@type URL_XAPIAN_TITLE_INDEX: L{str}
+@var URL_XAPIAN_FULLTEXT_INDEX: full URL to the xapian fulltext index
+@type URL_XAPIAN_FULLTEXT_INDEX: L{str}
 @var MIMETYPE_ZIMLISTING: the mimetype used by zim listings (e.g. the title indexes)
 @type MIMETYPE_ZIMLISTING: L{str}
 @var MIMETYPE_REDIRECT: symbolic mimetype used by internal redirects
@@ -50,6 +54,8 @@ ENDIAN = "<"
 # special URLs
 URL_ENTRY_TITLE_INDEX = "Xlisting/titleOrdered/v0"
 URL_ARTICLE_TITLE_INDEX = "Xlisting/titleOrdered/v1"
+URL_XAPIAN_TITLE_INDEX = "Xtitle/xapian"
+URL_XAPIAN_FULLTEXT_INDEX = "Xfulltext/xapian"
 URL_MAINPAGE_REDIRECT = "WmainPage"
 URL_COUNTER = "MCounter"
 

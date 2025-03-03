@@ -89,6 +89,13 @@ class BlobNotFound(BaseZimException):
     pass
 
 
+class ZimFeatureMissing(BaseZimException):
+    """
+    Exception raised when a ZIM does not provide a feature.
+    """
+    pass
+
+
 class NoCounter(BaseZimException):
     """
     Exception raised when the counter could not be loaded.
@@ -99,6 +106,13 @@ class NoCounter(BaseZimException):
 class OperationNotSupported(BaseZimException):
     """
     Exception raised when a class does not support an operation.
+    """
+    pass
+
+
+class MissingDependency(OperationNotSupported):
+    """
+    Exception raised when a missing dependency prevents a feature from working.
     """
     pass
 

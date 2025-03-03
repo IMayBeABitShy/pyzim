@@ -33,13 +33,21 @@ dependencies = [
 [project.optional-dependencies]
 testing = [
     "tox",
+    "pyzstd",
 ]
 compression = [
     "zstandard",
 ]
+search = [
+    "xapian-bindings",
+    "rigour",
+]
 all = [
     "tox",
     "zstandard",
+    "pyzstd",
+    "xapian-bindings",
+    "rigour",
 ]
 
 # wheel generation
@@ -76,7 +84,7 @@ deps = [
     "pytest",
     "pytest-cov",
     "pytest-timeout",
-    ".[compression]",
+    ".[compression,search,testing]",
 ]
 commands = [
     ["pytest", "--showlocals", "--log-level=debug", "--cov=pyzim", "--cov-branch", "--cov-report", "html:html/coverage", "--cov-report", "term", "--timeout", "5", "--verbose", "tests/", ],

@@ -90,20 +90,40 @@ class TestBase(object):
         }
     NUM_ENTRIES = 5 + 2 + 1 + len(TEST_ZIM_META) + 1  # 5 items, 2 title lists, 1 redirect, 1 counter
 
+    def get_zts_zim_path(self, zimtype, name):
+        """
+        Return the path of the specified zim from the ZIM testing suite.
+
+        @param zimtype: type of ZIM to get path of (e.g. nons, withns, noTitleListingV0)
+        @type zimtype: L{str}
+        @param name: name of the ZIM to get path of (e.g. small.zim)
+        @type name: L{str}
+        @return: the path to the specified ZIM file
+        @rtype: L{str}
+        @raises KeyError: when the specified ZIM could not be found
+        """
+        assert isinstance(zimtype, str)
+        assert isinstance(name, str)
+        path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "zim-testing-suite",
+            "data",
+            zimtype,
+            name,
+        )
+        if not os.path.exists(path):
+            raise KeyError("Could not find ZTS ZIM file at '{}'!".format(path))
+        return path
+
     def get_zts_small_path(self):
         """
         Return the path of small.zim from the ZTS.
 
-        @return: the header
-        @rtype: L{pyzim.header.Header}
+        @return: the path of the nons, small ZIM file from the ZTS
+        @rtype: L{str}
         """
-        path = os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "zim-testing-suite/data/nons/small.zim",
-        )
-        return path
+        return self.get_zts_zim_path("nons", "small.zim")
 
-    @contextlib.contextmanager
     def open_zts_small(self, **kwargs):
         """
         Return a ZIM archive for small.zim from the ZTS.
@@ -112,12 +132,7 @@ class TestBase(object):
         @return: a contextmanager providing the ZIM archive
         @rtype: L{pyzim.archive.Zim}
         """
-        path = self.get_zts_small_path()
-        with Zim.open(path, mode="r", **kwargs) as archive:
-            try:
-                yield archive
-            finally:
-                archive.close()
+        return self.open_zts_zim("nons", "small.zim", **kwargs)
 
     @contextlib.contextmanager
     def open_zts_small_dir(self):
@@ -143,6 +158,27 @@ class TestBase(object):
         """
         with tempfile.TemporaryDirectory() as tempdir:
             yield TempZimDir(path=tempdir)
+
+    @contextlib.contextmanager
+    def open_zts_zim(self, zimtype, name, **kwargs):
+        """
+        Return a ZIM archive for small.zim from the ZTS.
+
+        @param zimtype: type of ZIM to open (e.g. nons, withns, noTitleListingV0)
+        @type zimtype: L{str}
+        @param name: name of the ZIM to open (e.g. small.zim)
+        @type name: L{str}
+        @param kwargs: keyword arguments to pass to L{pyzim.archive.Zim.open}
+        @return: a contextmanager providing the ZIM archive
+        @rtype: L{pyzim.archive.Zim}
+        @raises KeyError: when the specified ZIM could not be found
+        """
+        path = self.get_zts_zim_path(zimtype, name)
+        with Zim.open(path, mode="r", **kwargs) as archive:
+            try:
+                yield archive
+            finally:
+                archive.close()
 
     def has_zimcheck(self):
         """
