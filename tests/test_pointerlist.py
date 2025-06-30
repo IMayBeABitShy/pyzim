@@ -62,7 +62,7 @@ class SimplePointerListTests(unittest.TestCase, TestBase):
         """
         Test L{pyzim.pointerlist.SimplePointerList.from_zim_entry}.
         """
-        with self.open_zts_small() as zim:
+        with self.open_zts_zim("nons", "small.zim") as zim:
             # we've got a bit of a problem here: there's no simple
             # pointer list stored inside an entry of any ZIM file,
             # only title pointer lists. To test this anyway, we are going
@@ -519,7 +519,7 @@ class OnDiskSimplePointerListTests(unittest.TestCase, TestBase):
         """
         Test L{pyzim.pointerlist.OnDiskSimplePointerList.from_zim_entry}
         """
-        with self.open_zts_small() as zim:
+        with self.open_zts_zim("nons", "small.zim") as zim:
             # we've got a bit of a problem here: there's no simple
             # pointer list stored inside an entry of any ZIM file,
             # only title pointer lists. To test this anyway, we are going
@@ -578,7 +578,7 @@ class OnDiskOrderedPointerListTests(unittest.TestCase, TestBase):
         """
         Test L{pyzim.pointerlist.OnDiskOrderedPointerList.from_zim_entry}
         """
-        with self.open_zts_small() as zim:
+        with self.open_zts_zim("nons", "small.zim") as zim:
             pointerlist = OnDiskTitlePointerList.from_zim_entry(
                 zim,
                 constants.URL_ENTRY_TITLE_INDEX,

@@ -276,7 +276,8 @@ class ZimReaderTests(unittest.TestCase, TestBase):
         """
         with self.open_zts_small(policy=self.policy) as zim:
             zim._url_pointer_list.check_sorted()
-            zim._entry_title_pointer_list.check_sorted()
+            if zim._entry_title_pointer_list is not None:
+                zim._entry_title_pointer_list.check_sorted()
             zim._article_title_pointer_list.check_sorted()
 
     def test_get_cluster_index_by_offset(self):
@@ -314,6 +315,7 @@ class ZimReaderTests(unittest.TestCase, TestBase):
                 "Description",
                 "Illustration_48x48@1",
                 "Language",
+                "Name",
                 "Publisher",
                 "Scraper",
                 "Tags",
@@ -322,7 +324,7 @@ class ZimReaderTests(unittest.TestCase, TestBase):
             self.assertEqual(keys, expected_keys)
             self.assertIsInstance(metadata["Scraper"], str)
             self.assertIsInstance(metadata["Illustration_48x48@1"], bytes)  # always bytes
-            self.assertEqual(metadata["Language"], "en")
+            self.assertEqual(metadata["Language"], "eng")
 
             # check metadata dict with binary data
             metadata = zim.get_metadata_dict(as_unicode=False)
@@ -334,6 +336,7 @@ class ZimReaderTests(unittest.TestCase, TestBase):
                 b"Description",
                 b"Illustration_48x48@1",
                 b"Language",
+                b"Name",
                 b"Publisher",
                 b"Scraper",
                 b"Tags",
@@ -342,7 +345,7 @@ class ZimReaderTests(unittest.TestCase, TestBase):
             self.assertEqual(keys, expected_keys)
             self.assertIsInstance(metadata[b"Scraper"], bytes)
             self.assertIsInstance(metadata[b"Illustration_48x48@1"], bytes)
-            self.assertEqual(metadata[b"Language"], b"en")
+            self.assertEqual(metadata[b"Language"], b"eng")
 
     def test_checksum(self):
         """
@@ -412,7 +415,8 @@ class ZimWriterTests(unittest.TestCase, TestBase):
             with zimdir.open(mode="w", policy=self.policy) as zim:
                 self.populate_zim(zim)
                 zim._url_pointer_list.check_sorted()
-                zim._entry_title_pointer_list.check_sorted()
+                if zim._entry_title_pointer_list is not None:
+                    zim._entry_title_pointer_list.check_sorted()
                 zim._article_title_pointer_list.check_sorted()
             # validate zimfile
             if self.has_zimcheck():
@@ -429,7 +433,8 @@ class ZimWriterTests(unittest.TestCase, TestBase):
                 self.populate_zim(zim)
                 zim.flush()
                 zim._url_pointer_list.check_sorted()
-                zim._entry_title_pointer_list.check_sorted()
+                if zim._entry_title_pointer_list is not None:
+                    zim._entry_title_pointer_list.check_sorted()
                 zim._article_title_pointer_list.check_sorted()
             # validate zimfile
             if self.has_zimcheck():
@@ -444,7 +449,8 @@ class ZimWriterTests(unittest.TestCase, TestBase):
                 self.populate_zim(zim)
                 self.populate_zim(zim)  # yes, twice
                 zim._url_pointer_list.check_sorted()
-                zim._entry_title_pointer_list.check_sorted()
+                if zim._entry_title_pointer_list is not None:
+                    zim._entry_title_pointer_list.check_sorted()
                 zim._article_title_pointer_list.check_sorted()
             # validate zimfile
             if self.has_zimcheck():
@@ -460,7 +466,8 @@ class ZimWriterTests(unittest.TestCase, TestBase):
             with zimdir.open(mode="u", policy=self.policy) as zim:
                 self.populate_zim(zim)
                 zim._url_pointer_list.check_sorted()
-                zim._entry_title_pointer_list.check_sorted()
+                if zim._entry_title_pointer_list is not None:
+                    zim._entry_title_pointer_list.check_sorted()
                 zim._article_title_pointer_list.check_sorted()
             # validate zimfile
             if self.has_zimcheck():
@@ -478,7 +485,8 @@ class ZimWriterTests(unittest.TestCase, TestBase):
             with zimdir.open(mode="u", policy=self.policy) as zim:
                 self.populate_zim(zim)
                 zim._url_pointer_list.check_sorted()
-                zim._entry_title_pointer_list.check_sorted()
+                if zim._entry_title_pointer_list is not None:
+                    zim._entry_title_pointer_list.check_sorted()
                 zim._article_title_pointer_list.check_sorted()
             # validate zimfile
             if self.has_zimcheck():
@@ -492,7 +500,8 @@ class ZimWriterTests(unittest.TestCase, TestBase):
             with zimdir.open(mode="x", policy=self.policy) as zim:
                 self.populate_zim(zim)
                 zim._url_pointer_list.check_sorted()
-                zim._entry_title_pointer_list.check_sorted()
+                if zim._entry_title_pointer_list is not None:
+                    zim._entry_title_pointer_list.check_sorted()
                 zim._article_title_pointer_list.check_sorted()
             # validate zimfile
             if self.has_zimcheck():
@@ -534,7 +543,8 @@ class ZimWriterTests(unittest.TestCase, TestBase):
             with zimdir.open(mode="w", policy=testpolicy) as zim:
                 self.populate_zim(zim)
                 zim._url_pointer_list.check_sorted()
-                zim._entry_title_pointer_list.check_sorted()
+                if zim._entry_title_pointer_list is not None:
+                    zim._entry_title_pointer_list.check_sorted()
                 zim._article_title_pointer_list.check_sorted()
                 # flush zim(), then edit three articles
                 zim.flush()
@@ -606,7 +616,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
             with zimdir.open(mode="w", policy=self.policy) as zim:
                 self.populate_zim(zim)
                 for k, v in self.TEST_ZIM_META.items():
-                    self.assertEqual(zim.get_metadata(k), v)
+                    self.assertEqual(zim.get_metadata(k, as_unicode=isinstance(v, str)), v)
                 # also test type errors here
                 with self.assertRaises(TypeError):
                     zim.set_metadata(12, "testvalue")
@@ -626,7 +636,7 @@ class ZimWriterTests(unittest.TestCase, TestBase):
                 self.populate_zim(zim)
             with zimdir.open(mode="r", policy=self.policy) as zim:
                 for k, v in self.TEST_ZIM_META.items():
-                    self.assertEqual(zim.get_metadata(k), v)
+                    self.assertEqual(zim.get_metadata(k, as_unicode=isinstance(v, str)), v)
                 # also test type errors here
                 with self.assertRaises(TypeError):
                     zim.set_metadata(12, "testvalue")
@@ -851,14 +861,6 @@ class ZimWriterTests(unittest.TestCase, TestBase):
                 self.assertIn(b"Test Title", article_titles)
                 self.assertIn(b"Subdirectory", article_titles)
                 self.assertIn(b"Markdown", article_titles)
-                entry_titles = list(zim._entry_title_pointer_list.iter_values())
-                self.assertEqual(len(entry_titles), self.NUM_ENTRIES)
-                self.assertNotIn(b"CWelcome!", entry_titles)
-                self.assertIn(b"CTest Title", entry_titles)
-                self.assertIn(b"CSubdirectory", entry_titles)
-                self.assertIn(b"CMarkdown", entry_titles)
-                self.assertIn(b"TNamespace", entry_titles)
-                self.assertIn(b"CHidden", entry_titles)
 
     def test_title_edit_write(self):
         """
@@ -878,14 +880,15 @@ class ZimWriterTests(unittest.TestCase, TestBase):
                 self.assertIn(b"Test Title", article_titles)
                 self.assertIn(b"Subdirectory", article_titles)
                 self.assertIn(b"Markdown", article_titles)
-                entry_titles = list(zim._entry_title_pointer_list.iter_values())
-                self.assertEqual(len(entry_titles), self.NUM_ENTRIES)
-                self.assertNotIn(b"CWelcome!", entry_titles)
-                self.assertIn(b"CTest Title", entry_titles)
-                self.assertIn(b"CSubdirectory", entry_titles)
-                self.assertIn(b"CMarkdown", entry_titles)
-                self.assertIn(b"TNamespace", entry_titles)
-                self.assertIn(b"CHidden", entry_titles)
+                if zim._entry_title_pointer_list is not None:
+                    entry_titles = list(zim._entry_title_pointer_list.iter_values())
+                    self.assertEqual(len(entry_titles), self.NUM_ENTRIES)
+                    self.assertNotIn(b"CWelcome!", entry_titles)
+                    self.assertIn(b"CTest Title", entry_titles)
+                    self.assertIn(b"CSubdirectory", entry_titles)
+                    self.assertIn(b"CMarkdown", entry_titles)
+                    self.assertIn(b"TNamespace", entry_titles)
+                    self.assertIn(b"CHidden", entry_titles)
 
     def test_truncate(self):
         """
@@ -1271,7 +1274,8 @@ class ZimWriterTests(unittest.TestCase, TestBase):
                 self.assertEqual(zim.get_entry_by_full_url("Credirect_m").resolve().title, "Markdown")
                 self.assertEqual(zim.get_mainpage_entry().resolve().full_url, "Cnew_url.txt")
                 # validate sorting of title pointer lists
-                zim._entry_title_pointer_list.check_sorted()
+                if zim._entry_title_pointer_list is not None:
+                    zim._entry_title_pointer_list.check_sorted()
                 zim._article_title_pointer_list.check_sorted()
             if self.has_zimcheck():
                 self.run_zimcheck(zimdir.get_full_path())
@@ -1302,7 +1306,8 @@ class ZimWriterTests(unittest.TestCase, TestBase):
                 self.assertNotIn("Welcome!", titles)
                 self.assertIn("New Title", article_titles)
                 self.assertNotIn("Welcome!", article_titles)
-                zim._entry_title_pointer_list.check_sorted()
+                if zim._entry_title_pointer_list is not None:
+                    zim._entry_title_pointer_list.check_sorted()
                 zim._article_title_pointer_list.check_sorted()
                 # check with non-article entry
                 entry = zim.get_entry_by_full_url("Chidden.txt")
@@ -1321,7 +1326,8 @@ class ZimWriterTests(unittest.TestCase, TestBase):
                 self.assertNotIn("Hidden", titles)
                 self.assertNotIn("New hidden Title", article_titles)
                 self.assertNotIn("Hidden", article_titles)
-                zim._entry_title_pointer_list.check_sorted()
+                if zim._entry_title_pointer_list is not None:
+                    zim._entry_title_pointer_list.check_sorted()
                 zim._article_title_pointer_list.check_sorted()
             if self.has_zimcheck():
                 self.run_zimcheck(zimdir.get_full_path())
@@ -1350,7 +1356,8 @@ class ZimWriterTests(unittest.TestCase, TestBase):
                 article_titles = [e.title if not e.is_redirect else None for e in zim.iter_articles()]
                 self.assertIn("Welcome!", titles)
                 self.assertNotIn("Welcome!", article_titles)
-                zim._entry_title_pointer_list.check_sorted()
+                if zim._entry_title_pointer_list is not None:
+                    zim._entry_title_pointer_list.check_sorted()
                 zim._article_title_pointer_list.check_sorted()
                 # check with non-article entry
                 entry = zim.get_entry_by_full_url("Chidden.txt")
@@ -1367,7 +1374,8 @@ class ZimWriterTests(unittest.TestCase, TestBase):
                 article_titles = [e.title if not e.is_redirect else None for e in zim.iter_articles()]
                 self.assertIn("Hidden", titles)
                 self.assertIn("Hidden", article_titles)
-                zim._entry_title_pointer_list.check_sorted()
+                if zim._entry_title_pointer_list is not None:
+                    zim._entry_title_pointer_list.check_sorted()
                 zim._article_title_pointer_list.check_sorted()
             if self.has_zimcheck():
                 self.run_zimcheck(zimdir.get_full_path())

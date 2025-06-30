@@ -229,6 +229,8 @@ class TitleStartSearch(BaseSearch):
         BaseSearch.__init__(self, *args, **kwargs)
 
         if search_nonarticles:
+            if self.zim._entry_title_pointer_list is None:
+                raise ZimFeatureMissing("Zim does not contain an entry title pointer list!")
             self._titlepointerlist = self.zim._entry_title_pointer_list
         else:
             self._titlepointerlist = self.zim._article_title_pointer_list

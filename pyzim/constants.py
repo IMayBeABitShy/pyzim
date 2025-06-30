@@ -41,7 +41,7 @@ from .compression import CompressionType
 ZIM_MAJOR_VERSION = 6
 # minor version of the ZIM standard implemented
 # TODO: we probably need multiple values here later
-ZIM_MINOR_VERSION = 1
+ZIM_MINOR_VERSION = 3
 # list of compatible ZIM versions
 COMPATIBLE_ZIM_VERSIONS = (ZIM_MAJOR_VERSION, )
 

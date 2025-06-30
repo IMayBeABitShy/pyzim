@@ -314,7 +314,11 @@ class Zim(ModifiableMixIn):
         # the entry title pointer list
         # this may either be part of the header or accessed
         # via an URL
-        if self.has_entry_for_full_url(constants.URL_ENTRY_TITLE_INDEX):
+        if (self.header.major_version, self.header.minor_version) >= (6, 3):
+            # following version 6.1, entry pointer list v0 has been removed
+            logger.debug("Zim file version >= 6.1, skipping entry title pointer list.")
+            self._entry_title_pointer_list = None
+        elif self.has_entry_for_full_url(constants.URL_ENTRY_TITLE_INDEX):
             logger.debug("Reading entry title pointer list via URL...")
             self._entry_title_pointer_list = self.policy.title_pointer_list_class.from_zim_entry(
                 self,
@@ -331,9 +335,10 @@ class Zim(ModifiableMixIn):
                 seek=self.header.title_pointer_position,
                 key_func=self._get_namespace_title_for_entry_by_url_index,
             )
-        logger.debug("Entry title pointer list has {} entries.".format(len(self._entry_title_pointer_list)))
-        self._entry_title_pointer_list.mutable = self._writable
-        self.add_submodifiable(self._entry_title_pointer_list)
+        if self._entry_title_pointer_list is not None:
+            logger.debug("Entry title pointer list has {} entries.".format(len(self._entry_title_pointer_list)))
+            self._entry_title_pointer_list.mutable = self._writable
+            self.add_submodifiable(self._entry_title_pointer_list)
         # the article title pointer list
         if self.has_entry_for_full_url(constants.URL_ARTICLE_TITLE_INDEX):
             self._article_title_pointer_list = self.policy.title_pointer_list_class.from_zim_entry(
@@ -374,7 +379,7 @@ class Zim(ModifiableMixIn):
         self.mimetypelist = MimeTypeList([])
         self._url_pointer_list = self.policy.ordered_pointer_list_class.new(key_func=self._get_full_url_for_entry_at)
         self._cluster_pointer_list = self.policy.simple_pointer_list_class.new()
-        self._entry_title_pointer_list = self.policy.title_pointer_list_class.new(key_func=self._get_namespace_title_for_entry_by_url_index)
+        self._entry_title_pointer_list = None
         self._article_title_pointer_list = self.policy.title_pointer_list_class.new(key_func=self._get_title_for_entry_by_url_index)
         # add them all as mutable submodifiables and mark them as dirty
         submodifiables = [
@@ -382,7 +387,6 @@ class Zim(ModifiableMixIn):
             self.mimetypelist,
             self._url_pointer_list,
             self._cluster_pointer_list,
-            self._entry_title_pointer_list,
             self._article_title_pointer_list,
         ]
         for submodifiable in submodifiables:
@@ -406,14 +410,6 @@ class Zim(ModifiableMixIn):
         # we insert a placeholder entry for the title index, so that
         # the various lists already contain a pointer and we have
         # an associated blob and cluster.
-        title_pointer_placeholder_item = Item(
-            namespace="X",
-            url=constants.URL_ENTRY_TITLE_INDEX[1:],  # remove namespace
-            mimetype=constants.MIMETYPE_ZIMLISTING,
-            blob_source=EmptyBlobSource(),
-            is_article=False,
-        )
-        # we also do this for the article pointer list
         article_title_pointer_placeholder_item = Item(
             namespace="X",
             url=constants.URL_ARTICLE_TITLE_INDEX[1:],  # remove namespace
@@ -421,7 +417,6 @@ class Zim(ModifiableMixIn):
             blob_source=EmptyBlobSource(),
             is_article=False,
         )
-        self.add_item(title_pointer_placeholder_item, force_uncompressed=True)
         self.add_item(article_title_pointer_placeholder_item, force_uncompressed=True)
         # ensure placeholders are written
         self.uncompressed_compression_strategy.flush()
@@ -591,7 +586,7 @@ class Zim(ModifiableMixIn):
             # TODO: delete old list
         # entry title pointer list
         # after article pointer list, as that title is included here too
-        if self._entry_title_pointer_list.dirty:
+        if (self._entry_title_pointer_list is not None) and self._entry_title_pointer_list.dirty:
             logger.debug("Writing entry title pointer list...")
             self.compression_strategy.flush()
             self.uncompressed_compression_strategy.flush()
@@ -972,7 +967,7 @@ class Zim(ModifiableMixIn):
         assert isinstance(skip, (list, tuple))
         logger.log(constants.LOG_LEVEL_WRITE, "Updating pointers (start={}, diff={})".format(start, diff))
         # update entry title list
-        if edit_etpl:
+        if edit_etpl and (self._entry_title_pointer_list is not None):
             self._entry_title_pointer_list.mass_update(diff, start=start)
         # update article title list
         if edit_atpl:
@@ -1128,8 +1123,9 @@ class Zim(ModifiableMixIn):
             article_index = self._article_title_pointer_list.get_by_pointer(url_index)
             self._article_title_pointer_list.remove_by_index(article_index)
         # remove entry title
-        entry_title_index = self._entry_title_pointer_list.get_by_pointer(url_index)
-        self._entry_title_pointer_list.remove_by_index(entry_title_index)
+        if self._entry_title_pointer_list is not None:
+            entry_title_index = self._entry_title_pointer_list.get_by_pointer(url_index)
+            self._entry_title_pointer_list.remove_by_index(entry_title_index)
         # remove from url list
         logger.debug("Removing index {} from url pointer list (pointer: {})".format(url_index, self._url_pointer_list._pointers[url_index]))  # DEBUG
         self._url_pointer_list.remove_by_index(url_index)
@@ -1203,7 +1199,10 @@ class Zim(ModifiableMixIn):
 
         This function does not guarantee any specific order of the entries
         yielded by this function, however it currently *should* be ordered
-        by namespace and title.
+        by URL.
+
+        Before, this method iterated by title, but this has been changed
+        following the removal of the v0 entry title index.
 
         @param start: index of first entry to return (inclusive)
         @type start: L{int}
@@ -1212,8 +1211,7 @@ class Zim(ModifiableMixIn):
         @yield: the entries in the specified range
         @ytype: L{pyzim.entry.BaseEntry}
         """
-        for i in self._entry_title_pointer_list.iter_pointers(start=start, end=end):
-            yield self.get_entry_by_url_index(i)
+        return self.iter_entries_by_url(start=start, end=end)
 
     def iter_entries_by_url(self, start=None, end=None):
         """
@@ -1337,24 +1335,27 @@ class Zim(ModifiableMixIn):
 
         # find title pointers
         if not is_new_entry:
-            try:
-                old_entry_title_index = self._entry_title_pointer_list.get_by_pointer(old_url_index)
-            except KeyError:
-                # now, this is an annoying edge case
-                # later on, when we insert this entries URL into the
-                # URL pointer list, we cause all other references (title pointers,
-                # redirects, ...) to go out of sync. We fix this by updating
-                # said references, including the redirects. However, at
-                # that point the redirect is not yet added to the title
-                # pointer list (because the mass update method we are
-                # using for convenience would cause the pointer to be off)
-                # thus, this method may be recursively called when the
-                # entry is already part of the archive but not yet added
-                # to the entry title pointer list (but only if it is a
-                # redirect!)
-                if not entry.is_redirect:  # pragma: no cover
-                    # unexpected situation, re-raise error
-                    raise
+            if self._entry_title_pointer_list is not None:
+                try:
+                    old_entry_title_index = self._entry_title_pointer_list.get_by_pointer(old_url_index)
+                except KeyError:
+                    # now, this is an annoying edge case
+                    # later on, when we insert this entries URL into the
+                    # URL pointer list, we cause all other references (title pointers,
+                    # redirects, ...) to go out of sync. We fix this by updating
+                    # said references, including the redirects. However, at
+                    # that point the redirect is not yet added to the title
+                    # pointer list (because the mass update method we are
+                    # using for convenience would cause the pointer to be off)
+                    # thus, this method may be recursively called when the
+                    # entry is already part of the archive but not yet added
+                    # to the entry title pointer list (but only if it is a
+                    # redirect!)
+                    if not entry.is_redirect:  # pragma: no cover
+                        # unexpected situation, re-raise error
+                        raise
+                    old_entry_title_index = None
+            else:
                 old_entry_title_index = None
             try:
                 old_article_title_index = self._article_title_pointer_list.get_by_pointer(old_url_index)
@@ -1391,7 +1392,7 @@ class Zim(ModifiableMixIn):
         # ================= Stage 3: perform changes ===================
         # delete from title lists
         if not is_new_entry:
-            if old_entry_title_index is not None:
+            if (old_entry_title_index is not None) and (self._entry_title_pointer_list is not None):
                 # see definition in stage 1
                 self._entry_title_pointer_list.remove_by_index(old_entry_title_index)
             if old_article_title_index is not None:
@@ -1419,7 +1420,8 @@ class Zim(ModifiableMixIn):
             new_url_index = old_url_index
         # insert new titles
         if add_to_title_pointer_list:
-            self._entry_title_pointer_list.add(entry.namespace + entry.title, new_url_index)
+            if self._entry_title_pointer_list is not None:
+                self._entry_title_pointer_list.add(entry.namespace + entry.title, new_url_index)
             if is_article:
                 self._article_title_pointer_list.add(entry.title, new_url_index)
 

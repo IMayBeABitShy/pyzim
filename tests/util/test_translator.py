@@ -71,6 +71,8 @@ class TranslatorTests(unittest.TestCase, TestBase):
                     if entry.namespace == "M":
                         expected_seen_metadata.append((entry.url, entry.read()))
                         expected_num_entries -= 1  # will not be included
+                    if entry.full_url == "Xlisting/titleOrdered/v0":
+                        expected_num_entries -= 1  # will not be included
                     if entry.is_redirect:
                         expected_seen_redirects.append((entry.full_url, entry.follow().full_url))
             # setup translator and translate

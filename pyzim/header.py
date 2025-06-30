@@ -166,7 +166,7 @@ class Header(ModifiableMixIn):
             entry_count=0,
             cluster_count=0,
             url_pointer_position=0,
-            title_pointer_position=0,
+            title_pointer_position=0xffffffffffffffff,
             cluster_pointer_position=0,
             mime_list_position=0,
             main_page=0xffffffff,
@@ -230,7 +230,7 @@ Pages:
             )
         if self.major_version not in constants.COMPATIBLE_ZIM_VERSIONS:
             raise IncompatibleZimFile("Zim version {} not supported!".format(self.major_version))
-        if self.minor_version != constants.ZIM_MINOR_VERSION:
+        if (self.major_version, self.minor_version) < (6, 1):
             raise IncompatibleZimFile("PyZim currently only supports the new ZIM namespace format")
 
     # =============== properties ===============

@@ -86,7 +86,7 @@ class TestBase(object):
             "Date": "2023-09-11",
             "Description": "A ZIM file for testing",
             "Language": "Eng",
-            "Illustration_48x48@1": "some placeholder data",
+            "Illustration_48x48@1": b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x000\x00\x00\x000\x08\x02\x00\x00\x00\xd8`n\xd0\x00\x00\x00\x1dIDATx\x9c\xed\xc1\x01\x01\x00\x00\x00\x82 \xff\xafnH@\x01\x00\x00\x00\x00\x00\xc0\xaf\x01\x1b0\x00\x01>\xafn\xc4\x00\x00\x00\x00IEND\xaeB`\x82',
         }
     NUM_ENTRIES = 5 + 2 + 1 + len(TEST_ZIM_META) + 1  # 5 items, 2 title lists, 1 redirect, 1 counter
 
@@ -122,7 +122,7 @@ class TestBase(object):
         @return: the path of the nons, small ZIM file from the ZTS
         @rtype: L{str}
         """
-        return self.get_zts_zim_path("nons", "small.zim")
+        return self.get_zts_zim_path("noTitleListingV0", "small.zim")
 
     def open_zts_small(self, **kwargs):
         """
@@ -132,7 +132,7 @@ class TestBase(object):
         @return: a contextmanager providing the ZIM archive
         @rtype: L{pyzim.archive.Zim}
         """
-        return self.open_zts_zim("nons", "small.zim", **kwargs)
+        return self.open_zts_zim("noTitleListingV0", "small.zim", **kwargs)
 
     @contextlib.contextmanager
     def open_zts_small_dir(self):
