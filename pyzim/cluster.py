@@ -425,18 +425,32 @@ class Cluster(BindableMixIn):
             raise BlobNotFound("Blob with index {} not found!".format(i))
         return offsets[1] - offsets[0]
 
-    def read_blob(self, i):
+    def read_blob(self, i, start=None, end=None):
         """
-        Read the entirety of the specified blob and return the content.
+        Read the entirety of the specified range in the specified blob and return the content.
+
+        The parameters 'start' and 'end' can be used to specify a range
+        within the blob to read. In this case, both values are interpreted
+        relative to the actual blob start. Similar to how python slices
+        work, the 'start' value will be inclusive and the 'end' value exclusive.
+        If start >= size of the blob, the return value will be b"".
+        If the end lies outside the blob, read only up until the end of the blob.
 
         @param i: index of blob to read
         @type i: L{int}
+        @param start: if specified, the offset relative to the start of the blob to start reading from
+        @type start: L{None} or L{int}
+        @param end: if specified, the offset relative to the start of the blob to stop reading at
+        @type end: L{None} or L{int}
         @return: the content of the blob
         @rtype: L{bytes}
         @raises pyzim.exceptions.BindRequired: if cluster is unbound
         @raises pyzim.exceptions.BlobNotFound: if the blob index is out of range
         """
         assert isinstance(i, int) and i >= 0
+        assert (start is None) or (isinstance(start, int) and start >= 0)
+        assert (end is None) or (isinstance(end, int) and end >= 0)
+        assert (start is None or end is None) or (end >= start)
         if not self.bound:
             raise BindRequired("Accessing blob contents requires the cluster to be bound first!")
 
@@ -444,25 +458,46 @@ class Cluster(BindableMixIn):
         if len(offsets) < 2:
             # blob offsets not found, blob does not exists
             raise BlobNotFound("No blob with index {}!".format(i))
-        size = offsets[1] - offsets[0]  # not using get_blob_size() as we need the offset
-        with self._get_decompressing_reader(offset=offsets[0]) as reader:
+        range_start, range_end = offsets
+        if (start is not None and end is not None) and ((start >= range_end) or (start == end)):
+            return b""
+        if start is not None:
+            range_start += start
+        if end is not None:
+            range_end = min(offsets[0] + end, range_end)  # ensure we stay inside the blob
+        size = range_end - range_start  # not using get_blob_size() as we need the offset
+        with self._get_decompressing_reader(offset=range_start) as reader:
             return reader.read_n(size)
 
-    def iter_read_blob(self, i, buffersize=4096):
+    def iter_read_blob(self, i, buffersize=4096, start=None, end=None):
         """
         Iteratively read the specified blob.
+
+        The parameters 'start' and 'end' can be used to specify a range
+        within the blob to read. In this case, both values are interpreted
+        relative to the actual blob start. Similar to how python slices
+        work, the 'start' value will be inclusive and the 'end' value exclusive.
+        If start >= size of the blob, the return value will be b"".
+        If the end lies outside the blob, read only up until the end of the blob.
 
         @param i: index of blob to read
         @type i: L{int}
         @param buffersize: number of bytes to read at once
         @type buffersize: L{int}
+        @param start: if specified, the offset relative to the start of the blob to start reading from
+        @type start: L{None} or L{int}
+        @param end: if specified, the offset relative to the start of the blob to stop reading at
+        @type end: L{None} or L{int}
         @yields: chunks of the blob content
         @ytype: L{bytes}
         @raises pyzim.exceptions.BindRequired: if cluster is unbound
         @raises pyzim.exceptions.BlobNotFound: if the blob index is out of range
         """
-        assert isinstance(i, int) and i >= 0
         assert isinstance(buffersize, int) and buffersize > 0
+        assert isinstance(i, int) and i >= 0
+        assert (start is None) or (isinstance(start, int) and start >= 0)
+        assert (end is None) or (isinstance(end, int) and end >= 0)
+        assert (start is None or end is None) or (end >= start)
         if not self.bound:
             raise BindRequired("Accessing blob contents requires the cluster to be bound first!")
 
@@ -470,8 +505,16 @@ class Cluster(BindableMixIn):
         if len(offsets) < 2:
             # blob offsets not found, blob does not exists
             raise BlobNotFound("No blob with index {}!".format(i))
-        size = offsets[1] - offsets[0]  # not using get_blob_size() as we need the offset
-        with self._get_decompressing_reader(offset=offsets[0]) as reader:
+        range_start, range_end = offsets
+        if (start is not None and end is not None) and ((start >= range_end) or (start == end)):
+            yield b""
+            return
+        if start is not None:
+            range_start += start
+        if end is not None:
+            range_end = min(offsets[0] + end, range_end)  # ensure we stay inside the blob
+        size = range_end - range_start  # not using get_blob_size() as we need the offset
+        with self._get_decompressing_reader(offset=range_start) as reader:
             yield from reader.iter_read(n=size, buffersize=buffersize)
 
 
@@ -547,7 +590,7 @@ class InMemoryCluster(OffsetRememberingCluster):
             with self._get_decompressing_reader(offset=self.get_offset(0)) as reader:
                 self._data = reader.read_n(data_length)
 
-    def read_blob(self, i):
+    def read_blob(self, i, start=None, end=None):
         assert isinstance(i, int) and i >= 0
         if not self.bound:
             raise BindRequired("Accessing blob contents requires the cluster to be bound first!")
@@ -557,10 +600,17 @@ class InMemoryCluster(OffsetRememberingCluster):
         if len(offsets) < 2:
             # blob offsets not found, blob does not exists
             raise BlobNotFound("No blob with index {}!".format(i))
+        range_start, range_end = offsets
+        if (start is not None and end is not None) and ((start >= range_end) or (start == end)):
+            return b""
+        if start is not None:
+            range_start += start
+        if end is not None:
+            range_end = min(offsets[0] + end, range_end)  # ensure we stay inside the blob
         correction = self.get_total_offset_size()
-        return self._data[offsets[0]-correction:offsets[1]-correction]
+        return self._data[range_start-correction:range_end-correction]
 
-    def iter_read_blob(self, i, buffersize=4096):
+    def iter_read_blob(self, i, buffersize=4096, start=None, end=None):
         assert isinstance(i, int) and i >= 0
         assert isinstance(buffersize, int) and buffersize > 0
         if not self.bound:
@@ -568,17 +618,23 @@ class InMemoryCluster(OffsetRememberingCluster):
 
         self._read_if_needed()
 
-        correction = self.get_total_offset_size()
         offsets = tuple(self.iter_blob_offsets(blob_numbers=(i, i+1)))
         if len(offsets) < 2:
             # blob offsets not found, blob does not exists
             raise BlobNotFound("No blob with index {}!".format(i))
-        start, end = offsets
-        start, end = start - correction, end - correction
+        range_start, range_end = offsets
+        if (start is not None and end is not None) and ((start >= range_end) or (start == end)):
+            return b""
+        if start is not None:
+            range_start += start
+        if end is not None:
+            range_end = min(offsets[0] + end, range_end)  # ensure we stay inside the blob
+        correction = self.get_total_offset_size()
+        range_end = range_end - correction
 
-        cur_pos = start
-        while cur_pos < end:
-            cur_end = min(cur_pos + buffersize, end)
+        cur_pos = range_start - correction
+        while cur_pos < range_end:
+            cur_end = min(cur_pos + buffersize, range_end)
             yield self._data[cur_pos:cur_end]
             cur_pos = cur_end
 
@@ -636,12 +692,12 @@ class EmptyCluster(Cluster):
             # the first offset
             yield 4
 
-    def iter_read_blob(self, i, buffersize=4096):
+    def iter_read_blob(self, i, buffersize=4096, start=None, end=None):
         assert isinstance(i, int) and i >= 0
         assert isinstance(buffersize, int) and buffersize >= 0
         raise BlobNotFound("Empty clusters are always empty!")
 
-    def read_blob(self, i):
+    def read_blob(self, i, start=None, end=None):
         assert isinstance(i, int) and i >= 0
         raise BlobNotFound("Empty clusters are always empty!")
 
@@ -1207,7 +1263,7 @@ class ModifiableClusterWrapper(Cluster, ModifiableMixIn):
             # advance offset by blob size
             cur_offset += size
 
-    def read_blob(self, i):
+    def read_blob(self, i, start=None, end=None):
         adjusted_i = self._adjust_index(i)
         if i in self._blobs:
             # read from modified/added blob
@@ -1218,24 +1274,43 @@ class ModifiableClusterWrapper(Cluster, ModifiableMixIn):
                 data += read
                 if not read:
                     break
-            return data
+            if start is None:
+                start = 0
+            if end is None:
+                end = len(data)
+            return data[start:end]
         else:
             # read from wrapped cluster
-            return self._cluster.read_blob(adjusted_i)
+            return self._cluster.read_blob(adjusted_i, start=start, end=end)
 
-    def iter_read_blob(self, i, buffersize=4096):
+    def iter_read_blob(self, i, buffersize=4096, start=None, end=None):
         adjusted_i = self._adjust_index(i)
         if i in self._blobs:
             # read from modified/added blob
             blob = self._blobs[i].get_blob()
+            if start is None:
+                start = 0
+            if end is None:
+                end = blob.get_size()
+            cur_pos = 0
             while True:
                 read = blob.read(buffersize)
                 if not read:
                     break
-                yield read
+                read_size = len(read)
+                if cur_pos + read_size < start:
+                    # we have not yet reached the point where we should read
+                    pass
+                elif cur_pos >= end:
+                    # we have read all the data we should read
+                    pass
+                else:
+                    # we are inside the range we should read
+                    yield read[max(0, start-cur_pos):min(read_size, (end - cur_pos))]
+                cur_pos += read_size
         else:
             # read from wrapped cluster
-            yield from self._cluster.iter_read_blob(adjusted_i, buffersize=buffersize)
+            yield from self._cluster.iter_read_blob(adjusted_i, buffersize=buffersize, start=start, end=end)
 
     # ----- ModifiableMixIn methods -----
 

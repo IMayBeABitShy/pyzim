@@ -759,33 +759,73 @@ class ContentEntry(BaseEntry):
         cluster = self.get_cluster()
         return cluster.get_blob_size(self.blob_number)
 
-    def read(self):
+    def read(self, start=None, end=None):
         """
         Read the content of this entry.
 
+        The parameters 'start' and 'end' can be used to specify a range
+        within the content of the entry to read. In this case, both
+        values are interpreted relative to the actual blob start.
+        Similar to how python slices work, the 'start' value will be
+        inclusive and the 'end' value exclusive. If start >= size of the
+        blob, the return value will be b"". If the end lies outside the
+        blob, read only up until the end of the blob.
+
+        @param start: if specified, the offset relative to the start of the blob to start reading from
+        @type start: L{None} or L{int}
+        @param end: if specified, the offset relative to the start of the blob to stop reading at
+        @type end: L{None} or L{int}
         @return: the content of this entry
         @rtype: L{bytes}
         @raises pyzim.exceptions.BindRequired: when not bound
+        @raises TypeError: on invalid parameter type
+        @raises ValueError: on invalid parameter value
         """
         if not self.bound:
             raise BindRequired("Reading the content of this entry requires this entry to be bound!")
+        if not (isinstance(start, int) or (start is None)):
+            raise TypeError("Value for parameter 'start' must be either None or an integer!")
+        if not (isinstance(end, int) or (end is None)):
+            raise TypeError("Value for parameter 'end' must be either None or an integer!")
+        if (start is not None and start < 0):
+            raise ValueError("Start of read range must be at least 0!")
+        if (end is not None and end < 0) or ((start is not None) and end < start):
+            raise ValueError("End of read range must be at least 0 and at least as high as start!")
         cluster = self.get_cluster()
-        return cluster.read_blob(self.blob_number)
+        return cluster.read_blob(self.blob_number, start=start, end=end)
 
-    def iter_read(self, buffersize=4096):
+    def iter_read(self, buffersize=4096, start=None, end=None):
         """
         Read the content of this entry iteratively.
+
+        The parameters 'start' and 'end' can be used to specify a range
+        within the content of the entry to read. In this case, both
+        values are interpreted relative to the actual blob start.
+        Similar to how python slices work, the 'start' value will be
+        inclusive and the 'end' value exclusive. If start >= size of the
+        blob, the return value will be b"". If the end lies outside the
+        blob, read only up until the end of the blob.
 
         @param buffersize: number of bytes to read at once
         @type buffersize: L{int}
         @yields: chunks of the content of this entry in sequential order
         @ytype: L{bytes}
         @raises pyzim.exceptions.BindRequired: when not bound
+        @raises TypeError: on invalid parameter type
+        @raises ValueError: on invalid parameter value
         """
         if not self.bound:
             raise BindRequired("Reading the content of this entry requires this entry to be bound!")
+        if not (isinstance(start, int) or (start is None)):
+            raise TypeError("Value for parameter 'start' must be either None or an integer!")
+        if not (isinstance(end, int) or (end is None)):
+            raise TypeError("Value for parameter 'end' must be either None or an integer!")
+        if (start is not None and start < 0):
+            raise ValueError("Start of read range must be at least 0!")
+        if (end is not None and end < 0) or ((start is not None) and end < start):
+            raise ValueError("End of read range must be at least 0 and at least as high as start!")
         cluster = self.get_cluster()
-        yield from cluster.iter_read_blob(self.blob_number, buffersize=buffersize)
+        yield from cluster.iter_read_blob(self.blob_number, buffersize=buffersize, start=start, end=end)
 
     def set_content(self, blob_source):
         """

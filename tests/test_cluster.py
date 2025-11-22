@@ -47,6 +47,18 @@ class ClusterTests(unittest.TestCase, TestBase):
         """
         return Policy(cluster_class=self.cluster_class)
 
+    def _read_blob_iter(self, iterable):
+        """
+        Helper function for converting an iter read into a single bytestring.
+
+        @param iterable: iterable whose results should be joined
+        @type iterable: iterable yielding L{bytes}
+        @return: a single bytestring, consisting of the joined elements of the iterable
+        @rtype: L{bytes}
+        """
+        assert not isinstance(iterable, bytes)
+        return b"".join([e for e in iterable])
+
     def test_init(self):
         """
         Test L{pyzim.cluster.Cluster.__init__}.
@@ -352,6 +364,41 @@ class ClusterTests(unittest.TestCase, TestBase):
             with self.assertRaises(exceptions.BlobNotFound):
                 cluster.read_blob(cluster.get_number_of_blobs())
 
+    def test_read_blob_range(self):
+        """
+        Test L{pyzim.cluster.Cluster.read_blob} with a range.
+        """
+        # check error on unbound cluster
+        cluster = self.cluster_class()
+        with self.assertRaises(exceptions.BindRequired):
+            cluster.read_blob(0, start=4, end=10)
+        # check size of read equals blob size
+        start = 10
+        end = 40
+        expected_size = (end - start)
+        did_run = False
+        with self.open_zts_small(policy=self.get_policy()) as zim:
+            cluster = zim.get_cluster_by_index(0)
+            for i in range(cluster.get_number_of_blobs()):
+                blob_size = cluster.get_blob_size(i)
+                if blob_size <= end:
+                    # skip blobs that aren't large enough
+                    continue
+                did_run = True
+                blob_content = cluster.read_blob(i, start=start, end=end)
+                org_blob_content = cluster.read_blob(i)
+                self.assertEqual(len(blob_content), expected_size)
+                self.assertEqual(blob_content, org_blob_content[start:end])
+                # test end out of range
+                self.assertEqual(cluster.read_blob(i, 0, 2**20), org_blob_content)
+                # test end out of range with offset start
+                self.assertEqual(cluster.read_blob(i, 4, 2**20), org_blob_content[4:])
+                # test empty range
+                self.assertEqual(cluster.read_blob(i, 2, 2), b"")
+                # test ridiculous range
+                self.assertEqual(cluster.read_blob(i, 2**20, 2**30), b"")
+        self.assertTrue(did_run)
+
     def test_iter_read_blob(self):
         """
         Test L{pyzim.cluster.Cluster.iter_read_blob}.
@@ -377,6 +424,51 @@ class ClusterTests(unittest.TestCase, TestBase):
             with self.assertRaises(exceptions.BlobNotFound):
                 for chunk in cluster.iter_read_blob(cluster.get_number_of_blobs()):
                     pass
+
+    def test_iter_read_blob_range(self):
+        """
+        Test L{pyzim.cluster.Cluster.iter_read_blob} with a range.
+        """
+        # check error on unbound cluster
+        cluster = self.cluster_class()
+        with self.assertRaises(exceptions.BindRequired):
+            for chunk in cluster.iter_read_blob(0):
+                pass
+        start = 10
+        end = 40
+        expected_size = (end - start)
+        did_run = False
+        # check size of read equals blob size
+        with self.open_zts_small(policy=self.get_policy()) as zim:
+            cluster = zim.get_cluster_by_index(0)
+            for i in range(cluster.get_number_of_blobs()):
+                blob_size = cluster.get_blob_size(i)
+                if blob_size <= end:
+                    # skip blobs that aren't large enough
+                    continue
+                did_run = True
+                org_blob_content = cluster.read_blob(i)
+
+                blob_content = b""
+                buffersize = 3
+                for chunk in cluster.iter_read_blob(i, buffersize=buffersize, start=start, end=end):
+                    self.assertLessEqual(len(chunk), buffersize)
+                    blob_content += chunk
+                self.assertEqual(expected_size, len(blob_content))
+                self.assertEqual(blob_content, org_blob_content[start:end])
+                # test end out of range
+                self.assertEqual(self._read_blob_iter(cluster.iter_read_blob(i, buffersize, 0, 2**20)), org_blob_content)
+                # test end out of range with offset start
+                self.assertEqual(self._read_blob_iter(cluster.iter_read_blob(i, buffersize, 4, 2**20)), org_blob_content[4:])
+                # test empty range
+                self.assertEqual(self._read_blob_iter(cluster.iter_read_blob(i, buffersize, 2, 2)), b"")
+                # test ridiculous range
+                self.assertEqual(self._read_blob_iter(cluster.iter_read_blob(i, buffersize, 2**20, 2**30)), b"")
+            # check error on reading out of range
+            with self.assertRaises(exceptions.BlobNotFound):
+                for chunk in cluster.iter_read_blob(cluster.get_number_of_blobs()):
+                    pass
+        self.assertTrue(did_run)
 
     def test_reader_recycling(self):
         """
@@ -821,6 +913,9 @@ class ModifiableClusterWrapperTests(ClusterTests):
                 cluster.set_blob(5, new_blob)
                 data = cluster.read_blob(5)
                 self.assertEqual(data, s)
+                # read in range
+                data = cluster.read_blob(5, start=2, end=5)
+                self.assertEqual(data, s[2:5])
 
     def test_iter_read_blob_modified(self):
         """
@@ -847,6 +942,9 @@ class ModifiableClusterWrapperTests(ClusterTests):
                 for chunk in cluster.iter_read_blob(5, buffersize=2):
                     data += chunk
                 self.assertEqual(data, s)
+                # read in range
+                data = self._read_blob_iter(cluster.iter_read_blob(5, buffersize=3, start=4, end=9))
+                self.assertEqual(data, s[4:9])
 
     def test_get_content_size_modified(self):
         """

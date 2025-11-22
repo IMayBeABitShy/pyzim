@@ -91,6 +91,29 @@ class EntryTests(unittest.TestCase, TestBase):
             self.assertIn(b"<title>Test ZIM file</title>", content)
             self.assertIn(b"</html>", content)
 
+    def test_read_range(self):
+        """
+        Test L{pyzim.entry.ContentEntry.read} with a range.
+        """
+        with self.open_zts_small() as zim:
+            entry_redirect = zim.get_mainpage_entry()
+            entry = entry_redirect.resolve()
+            start = 5
+            end = 10
+            content = entry.read(start=start, end=end)
+            full_content = entry.read()
+            self.assertEqual(content, full_content[start:end])
+            # validate some error handling
+            with self.assertRaises(TypeError):
+                entry.read(start="hello")
+            with self.assertRaises(TypeError):
+                entry.read(end="hello")
+            with self.assertRaises(ValueError):
+                entry.read(start=-1)
+            with self.assertRaises(ValueError):
+                entry.read(start=10, end=5)
+            entry.read(end=10)
+
     def test_iter_read(self):
         """
         Test L{pyzim.entry.ContentEntry.iter_read}.
@@ -101,6 +124,34 @@ class EntryTests(unittest.TestCase, TestBase):
             content = entry.read()
             iter_content = b"".join([c for c in entry.iter_read(buffersize=3)])
             self.assertEqual(iter_content, content)
+
+    def test_iter_read_range(self):
+        """
+        Test L{pyzim.entry.ContentEntry.iter_read} with a range.
+        """
+        with self.open_zts_small() as zim:
+            entry_redirect = zim.get_mainpage_entry()
+            entry = entry_redirect.resolve()
+            start = 5
+            end = 10
+            full_content = entry.read()
+            iter_content = b"".join([c for c in entry.iter_read(buffersize=3, start=start, end=end)])
+            self.assertEqual(iter_content, full_content[start:end])
+            # validate some error handling
+            with self.assertRaises(TypeError):
+                for c in entry.iter_read(start="hello"):
+                    pass
+            with self.assertRaises(TypeError):
+                for c in entry.iter_read(end="hello"):
+                    pass
+            with self.assertRaises(ValueError):
+                for c in entry.iter_read(start=-1):
+                    pass
+            with self.assertRaises(ValueError):
+                for c in entry.iter_read(start=10, end=5):
+                    pass
+            for c in entry.iter_read(end=10):
+                pass
 
     def test_base_entry_from_file(self):
         """
