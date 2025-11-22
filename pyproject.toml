@@ -39,7 +39,8 @@ compression = [
     "zstandard",
 ]
 search = [
-    "xapian-bindings",
+#    "xapian-bindings",
+    "xapian-bindings@git+https://github.com/IMayBeABitShy/xapian-bindings/",
     "rigour",
 ]
 all = [
@@ -53,6 +54,10 @@ all = [
 # wheel generation
 [tool.hatch.build.targets.wheel]
 packages = ["pyzim"]
+
+# other hatch options
+[tool.hatch.metadata]
+allow-direct-references = true
 
 # project urls
 [project.urls]
