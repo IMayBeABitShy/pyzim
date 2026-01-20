@@ -50,10 +50,18 @@ class Counter(ModifiableMixIn, BaseProcessor):
         elif not isinstance(s, str):
             raise TypeError("Expected str or bytes, got {} instead!".format(type(s)))
         counts = {}
-        if s:
-            for element in s.split(";"):
-                mt, v = element.rsplit("=", 1)
+        splitted = s.split(";")
+        length = len(splitted)
+        i = 0
+        while i < length:
+            m_and_c = splitted[i]
+            while (i < length - 1) and (splitted[i+1].startswith(" ")):
+                m_and_c += ";" + splitted[i+1]
+                i += 1
+            if m_and_c:
+                mt, v = m_and_c.rsplit("=", 1)
                 counts[mt] = int(v)
+            i += 1
         return cls(counts=counts)
 
     @classmethod

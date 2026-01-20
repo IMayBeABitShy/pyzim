@@ -93,6 +93,29 @@ class CounterTests(unittest.TestCase, TestBase):
         with self.assertRaises(TypeError):
             Counter.from_string(1234)
 
+    def test_serialization_mimetypes_with_parameters(self):
+        """
+        Test the serialization of the when using mimetypes with parameters.
+        """
+        # load from a string
+        # this one was taken from wikipedia_en_all_mini_2025-12.zim
+        s = 'application/javascript=4;application/pdf=4;font/ttf=1;image/png=5;image/svg+xml=20;image/svg+xml; charset=utf-8; profile="https://www.mediawiki.org/wiki/Specs/SVG/1.0.0"=33711;text/css=39;text/html=8375792;text/html; charset=iso-8859-1=1;text/javascript=3'
+        for i in range(2):
+            # repeat twice so that we can test serialization
+            c = Counter.from_string(s)
+            print(c.counts)  # DEBUG
+            self.assertEqual(c.get_count("application/javascript"), 4)
+            self.assertEqual(c.get_count("application/pdf"), 4)
+            self.assertEqual(c.get_count("font/ttf"), 1)
+            self.assertEqual(c.get_count("image/png"), 5)
+            self.assertEqual(c.get_count("image/svg+xml"), 20)
+            self.assertEqual(c.get_count('image/svg+xml; charset=utf-8; profile="https://www.mediawiki.org/wiki/Specs/SVG/1.0.0"'), 33711)
+            self.assertEqual(c.get_count("text/css"), 39)
+            self.assertEqual(c.get_count("text/html"), 8375792)
+            self.assertEqual(c.get_count("text/html; charset=iso-8859-1"), 1)
+            self.assertEqual(c.get_count("text/javascript"), 3)
+            s = c.to_string()
+
     def test_get_count(self):
         """
         Test L{pyzim.counter.Counter.get_count}.
