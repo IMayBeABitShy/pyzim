@@ -1,5 +1,8 @@
 # pyzim - a python package for working with ZIM files
 
+[![Documentation](https://app.readthedocs.org/projects/pyzim/badge/?version=latest&style=flat-default)](https://pyzim.readthedocs.io/en/latest/)
+
+
 **Note:** `pyzim` is published on PyPI as `python-zim` due to a naming conflict with an existing package.
 
 `pyzim` is a semi-pure python package for working with ZIM files. A ZIM file is basically a very highly compressed archive of a website. Examples for ZIM files include offline versions of wikipedia, stackoverflow, project gutenberg and many more.
@@ -44,7 +47,7 @@ In addition to regular ZIM functionality, the following features are also implem
 
 **General project features:**
 
-- extensive API documentation (but not yet hosted online)
+- [extensive API documentation](https://pyzim.readthedocs.io/en/latest/)
 - extensive software tests (branch-coverage of 98% at the time of writing)
 - examples are provided
 
@@ -93,7 +96,7 @@ with pyzim.Zim.open(zimpath) as zim:
 
 ## Documentation
 
-`pyzim` is extensively documented using `pydoctor`. There is currently no online version of the documentation, but you can build it locally by running `tox -e docs` in the project directory, which will output HTML documentation to `html/apidocs/`. This requires `tox` to be installed.
+`pyzim` is extensively documented using `pydoctor`. An online version of the documentation is hosted [here](https://pyzim.readthedocs.io/en/latest/), but you can also build it locally by running `tox -e docs` in the project directory, which will output HTML documentation to `html/apidocs/`. This requires `tox` to be installed.
 
 If you are a contributor looking to write you own documentation, you can find a pydoctor syntax guide [here](https://pydoctor.readthedocs.io/en/latest/codedoc.html).
 
