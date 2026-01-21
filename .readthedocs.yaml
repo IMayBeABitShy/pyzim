@@ -17,4 +17,4 @@ build:
     build:
       html:
         - tox -e docs
-        - cp -r html/apidocs/ $READTHEDOCS_OUTPUT
+        - cp -r html/apidocs/ $READTHEDOCS_OUTPUT/html
